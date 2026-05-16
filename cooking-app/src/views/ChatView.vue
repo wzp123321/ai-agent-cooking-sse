@@ -57,8 +57,8 @@
 
         <!-- 机器人名称和副标题 -->
         <div class="header-info">
-          <span class="header-title">厨神小助</span>
-          <span class="header-sub">专业烹饪 AI 顾问</span>
+          <span class="header-title">{{ APP_NAME }}</span>
+          <span class="header-sub">{{ APP_DESC }}</span>
         </div>
 
         <!-- 清空当前对话按钮（hover 时显示 tooltip） -->
@@ -90,15 +90,20 @@
  *   - 移动端响应式（侧边栏 drawer 切换）
  *   - 提供"清空对话"的事件处理
  */
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { Menu, Delete } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import SidebarPanel from '@/components/SidebarPanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import InputBar from '@/components/InputBar.vue'
 import { useChatStore } from '@/stores/chat'
+import { APP_NAME, APP_DESC } from '@/constants'
 
 const chatStore = useChatStore()
+
+onMounted(() => {
+  chatStore.loadSessions()
+})
 
 /** 移动端抽屉开关状态（桌面端不受影响） */
 const drawerOpen = ref(false)

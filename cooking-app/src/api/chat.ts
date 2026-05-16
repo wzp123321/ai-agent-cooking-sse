@@ -21,12 +21,8 @@
  */
 
 // ─── 模块引入 ──────────────────────────────────────────────
-import type { ChatResponse } from '@/types'
-
-// ─── 常量配置 ──────────────────────────────────────────────
-
-/** API 基础地址（开发时由 Vite proxy 转发到后端 :3001） */
-const BASE_URL = '/api'
+import type { ChatResponse, SessionMeta, ChatMessage } from '@/types'
+import { BASE_URL } from '@/constants'
 
 // ─── 普通对话 ──────────────────────────────────────────────
 
@@ -224,4 +220,28 @@ export async function healthCheck(): Promise<boolean> {
     console.warn('[API] ⚠️  健康检查网络错误：Agent 服务不可达')
     return false
   }
+}
+
+// ─── 会话列表 & 历史 ──────────────────────────────────────
+
+export async function getSessions(): Promise<SessionMeta[]> {
+  console.info('[API] GET /api/sessions')
+  const res = await fetch(`${BASE_URL}/sessions`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
+
+export async function getHistory(sessionId: string): Promise<ChatMessage[]> {
+  console.info(`[API] GET /api/history/${sessionId}`)
+  const res = await fetch(`${BASE_URL}/history/${sessionId}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const data = await res.json() as { sessionId: string; history: { role: string; content: string; tool_call_id?: string }[] }
+  return data.history
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m, i) => ({
+      id: `${sessionId}_${i}`,
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+      timestamp: Date.now(),
+    }))
 }

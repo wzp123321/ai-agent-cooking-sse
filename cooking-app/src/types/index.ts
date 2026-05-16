@@ -18,6 +18,13 @@ export interface ChatSession {
   updatedAt: number
 }
 
+export interface SessionMeta {
+  id: string
+  title: string
+  created_at: number
+  updated_at: number
+}
+
 // ─── API 响应类型 ─────────────────────────────────────
 export interface ChatResponse {
   success: boolean

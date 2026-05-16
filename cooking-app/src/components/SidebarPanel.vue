@@ -21,9 +21,9 @@
       <div class="logo">
         <!-- 品牌图标 + 名称 -->
         <span class="logo-icon">🍳</span>
-        <span class="logo-text">厨神小助</span>
+        <span class="logo-text">{{ APP_NAME }}</span>
       </div>
-      <p class="logo-sub">AI 烹饪智能体</p>
+      <p class="logo-sub">{{ APP_SUBTITLE }}</p>
     </div>
 
     <!-- ══ ② 新建对话按钮 ══ -->
@@ -47,7 +47,7 @@
           :key="session.id"
           class="session-item"
           :class="{ active: session.id === chatStore.currentSessionId }"
-          @click="chatStore.switchSession(session.id); emit('close')"
+          @click="handleSwitchSession(session.id)"
         >
           <!-- 会话图标 -->
           <el-icon class="session-icon"><ChatLineRound /></el-icon>
@@ -109,10 +109,11 @@
  *   - onMounted：立即执行健康检查 + 启动定时轮询
  *   - onUnmounted：组件销毁时清理定时器（防止内存泄漏）
  */
-import { onMounted, onUnmounted } from 'vue'
 import { Plus, Close, ChatLineRound } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
-import { useChatStore, QUICK_QUESTIONS } from '@/stores/chat'
+import { useChatStore } from '@/stores/chat'
+import { QUICK_QUESTIONS, APP_NAME, APP_SUBTITLE } from '@/constants'
+import { useHealthCheck, useConversation } from '@/hooks'
 
 /**
  * emit 定义
@@ -121,37 +122,23 @@ import { useChatStore, QUICK_QUESTIONS } from '@/stores/chat'
 const emit = defineEmits<{ close: [] }>()
 
 const chatStore = useChatStore()
+const { sendMessage } = useConversation()
 
-/**
- * 定时器引用（用于组件销毁时清理）
- * setInterval 返回值是 number，用于 clearInterval
- */
-let timer: ReturnType<typeof setInterval>
-
-// ── 生命周期 ──────────────────────────────────────────────
-
-onMounted(() => {
-  // 组件挂载后立即检查一次 Agent 是否在线
-  chatStore.checkHealth()
-
-  // 每 30 秒轮询一次健康检查接口
-  // 原因：Agent 服务重启后，前端状态不会自动更新，需要主动探测
-  timer = setInterval(() => {
-    chatStore.checkHealth()
-  }, 30_000)
-})
-
-onUnmounted(() => {
-  // 清理定时器，防止组件销毁后定时器继续执行（内存泄漏）
-  clearInterval(timer)
-})
+useHealthCheck()
 
 // ── 事件处理 ──────────────────────────────────────────────
 
 /** 新建对话 */
 function handleNewChat() {
   chatStore.newSession()
-  emit('close') // 移动端关闭抽屉
+  emit('close')
+}
+
+/** 切换会话并加载历史 */
+function handleSwitchSession(id: string) {
+  chatStore.switchSession(id)
+  chatStore.loadHistory(id)
+  emit('close')
 }
 
 /** 删除指定会话 */
@@ -170,8 +157,8 @@ async function handleDeleteSession(id: string) {
 
 /** 点击快捷问题，直接作为首条消息发送 */
 function handleQuickQuestion(q: string) {
-  chatStore.sendMessage(q)
-  emit('close') // 移动端关闭抽屉
+  sendMessage(q)
+  emit('close')
 }
 </script>
 

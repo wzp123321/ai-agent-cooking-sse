@@ -27,6 +27,7 @@ import express, { type Request, type Response } from 'express'
 import cors from 'cors'
 import 'dotenv/config'
 import { CookingAgent } from './agent'
+import { runMigrations } from './db/migrate'
 import type { ChatRequestBody } from './types'
 
 // ─── Express 应用初始化 ────────────────────────────────────
@@ -48,6 +49,10 @@ console.info('[Middleware] ✅ CORS 已启用')
 // JSON 请求体解析：自动将 application/json 的请求体解析为 JS 对象
 app.use(express.json())
 console.info('[Middleware] ✅ JSON 解析中间件已启用')
+
+// ─── 数据库初始化 ──────────────────────────────────────────
+
+runMigrations()
 
 // ─── Agent 初始化 ──────────────────────────────────────────
 
@@ -227,6 +232,20 @@ app.post(
     }
   },
 )
+
+/**
+ * GET /api/sessions
+ * ────────────────────────────────────────────────────────────
+ * 获取所有会话列表（用于前端侧边栏展示历史对话）。
+ *
+ * 返回示例：
+ *   [{ "id": "xxx", "title": "红烧肉怎么做", "created_at": 123, "updated_at": 456 }]
+ */
+app.get('/api/sessions', (_req: Request, res: Response) => {
+  console.debug('[Route] GET /api/sessions')
+  const sessions = agent.listSessions()
+  res.json(sessions)
+})
 
 /**
  * GET /api/history/:sessionId

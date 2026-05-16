@@ -41,7 +41,7 @@
 
     <!-- 免责声明提示 -->
     <p class="input-hint">
-      厨神小助可能会犯错，重要食品安全问题请以权威资料为准
+      {{ DISCLAIMER }}
     </p>
   </div>
 </template>
@@ -62,9 +62,12 @@
  */
 import { ref, computed } from "vue";
 import { Promotion } from "@element-plus/icons-vue";
-import { useChatStore } from "@/stores/chat";
+import { useChatStore } from "@/stores/chat"
+import { useConversation } from "@/hooks"
+import { AGENT_OFFLINE_TIP, AGENT_ONLINE_PLACEHOLDER, DISCLAIMER } from "@/constants"
 
-const chatStore = useChatStore();
+const chatStore = useChatStore()
+const { sendMessage } = useConversation()
 
 /** 输入框绑定的文本（双向绑定） */
 const inputText = ref("");
@@ -77,9 +80,7 @@ const inputRef = ref();
  * 使用 computed 确保 agentOnline 变化时自动更新
  */
 const placeholder = computed(() =>
-  chatStore.agentOnline
-    ? "问我任何做菜相关的问题... (Enter 发送，Shift+Enter 换行)"
-    : "⚠️ Agent 未连接，请先启动后端服务",
+  chatStore.agentOnline ? AGENT_ONLINE_PLACEHOLDER : AGENT_OFFLINE_TIP,
 );
 
 /**
@@ -125,7 +126,7 @@ async function handleSend() {
   const text = inputText.value.trim();
   inputText.value = ""; // 发送后清空输入框
 
-  await chatStore.sendMessage(text);
+  await sendMessage(text)
 }
 </script>
 

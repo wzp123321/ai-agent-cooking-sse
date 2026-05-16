@@ -135,7 +135,7 @@ const renderedContent = computed(() => {
   border-radius: 16px;
   line-height: 1.7;       /* 行高，提升可读性 */
   font-size: 14px;
-  word-break: break-word; /* 长单词/URL 换行 */
+  overflow-wrap: break-word; /* 长单词/URL 溢出时换行 */
 }
 
 /* 用户气泡：橙色渐变 */
