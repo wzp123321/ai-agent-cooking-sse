@@ -7,27 +7,28 @@
  *   封装与 cooking-agent 后端服务的 HTTP 通信，包括：
  *   - 普通对话（完整返回）
  *   - 流式对话（SSE，逐字接收）
- *   - 会话管理（清除历史）
+ *   - 会话管理（列表、历史、清除）
  *   - 健康检查
+ *   - 用户画像（获取、更新）
  *
- * 技术细节：
- *   - 使用原生 fetch API（无额外依赖）
- *   - SSE 流式通过 ReadableStream + TextDecoder 实现
- *   - BASE_URL 由 Vite 代理到 http://localhost:3001（见 vite.config.js）
+ * 技术选型：
+ *   - REST 接口：使用 Axios 实例（统一拦截器、错误处理、日志）
+ *   - SSE 流式：使用原生 fetch（Axios 不支持 ReadableStream）
+ *   - BASE_URL 由 Vite 代理到 http://localhost:9000（见 vite.config.js）
  *
  * 错误处理：
- *   - HTTP 状态码非 2xx 统一抛出 Error
+ *   - Axios 响应拦截器统一处理 HTTP 错误并弹出提示
  *   - SSE 解析失败行直接跳过，不中断后续处理
  */
 
-// ─── 模块引入 ──────────────────────────────────────────────
-import type { ChatResponse, SessionMeta, ChatMessage } from '@/types'
+import request from './request'
 import { BASE_URL } from '@/constants'
+import type { ChatResponse, SessionMeta, ChatMessage, UserProfile } from '@/types'
 
 // ─── 普通对话 ──────────────────────────────────────────────
 
 /**
- * 发送普通对话请求（非流式）
+ * 发送普通对话请求（非流式，一次性返回完整结果）
  *
  * 使用场景：
  *   - 简单快速问答
@@ -36,39 +37,23 @@ import { BASE_URL } from '@/constants'
  * @param message   - 用户输入的消息
  * @param sessionId - 会话 ID（默认 'default'）
  * @returns 包含 AI 回复的结构化对象
- * @throws Error 网络错误或 API 返回非 2xx 状态
  */
 export async function sendChat(message: string, sessionId: string): Promise<ChatResponse> {
   console.info(`[API] POST /chat [${sessionId}]`)
 
-  const res = await fetch(`${BASE_URL}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, sessionId }),
-  })
+  const { data } = await request.post<ChatResponse>('/chat', { message, sessionId })
 
-  // 非 2xx 状态码统一处理
-  if (!res.ok) {
-    // 尝试从响应体中提取错误信息；JSON 解析失败时兜底返回 "请求失败"
-    const err = await res.json().catch(() => ({ error: '请求失败' }))
-    console.error(`[API] ❌ /chat 请求失败：HTTP ${res.status}`, err)
-    throw new Error((err as { error: string }).error || `HTTP ${res.status}`)
-  }
-
-  const data = await res.json() as ChatResponse
   console.info(`[API] ✅ /chat [${sessionId}] 收到回复：${data.message.length} 字符`)
   return data
 }
 
-// ─── 流式对话 ──────────────────────────────────────────────
+// ─── 流式对话（SSE，保留原生 fetch）───────────────────────
 
 /**
  * 发送流式对话请求（SSE — Server-Sent Events）
  *
- * 原理：
- *   - 前端 fetch 连接到 /api/chat/stream
- *   - 后端以 text/event-stream 格式推送多个 SSE 事件
- *   - 每个事件包含一个增量 token，客户端实时拼接并渲染
+ * 注意：此函数使用原生 fetch 而非 Axios，
+ * 因为 Axios 不支持 ReadableStream 流式读取。
  *
  * SSE 事件类型：
  *   - 'chunk'：每个 token 片段到达时触发 → 调用 onChunk
@@ -77,9 +62,10 @@ export async function sendChat(message: string, sessionId: string): Promise<Chat
  *
  * @param message   - 用户输入
  * @param sessionId - 会话 ID
- * @param onChunk  - 每次收到 token 片段的回调（拼接后渲染）
- * @param onDone   - 流结束后回调（关闭 loading 状态）
- * @param onError  - 出错时的回调（显示错误提示）
+ * @param onChunk   - 每次收到 token 片段的回调
+ * @param onDone    - 流结束后回调
+ * @param onError   - 出错时的回调
+ * @param signal    - AbortSignal，用于取消请求
  */
 export async function sendChatStream(
   message: string,
@@ -87,26 +73,29 @@ export async function sendChatStream(
   onChunk: (chunk: string) => void,
   onDone: (full: string) => void,
   onError: (err: Error) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  console.info(`[API] POST /chat/stream [${sessionId}] 建立连接…`)
+  console.info(`[API] POST /chat/stream [${sessionId}] 建立 SSE 连接…`)
 
   let response: Response
 
-  // ── 发起请求 ──
   try {
     response = await fetch(`${BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, sessionId }),
+      signal,
     })
   } catch (err) {
-    // 网络不可达、域名解析失败等底层错误会在这里触发
+    if ((err as Error).name === 'AbortError') {
+      console.info(`[API] 🛑 SSE [${sessionId}] 请求已取消`)
+      return
+    }
     console.error('[API] ❌ /chat/stream 网络请求失败：', err)
     onError(err as Error)
     return
   }
 
-  // ── 状态码校验 ──
   if (!response.ok) {
     console.error(`[API] ❌ /chat/stream HTTP ${response.status}`)
     onError(new Error(`HTTP ${response.status}`))
@@ -115,63 +104,43 @@ export async function sendChatStream(
 
   console.info('[API] 🔗 SSE 连接已建立，开始接收流…')
 
-  // ── 读取 SSE 流 ──
-  // response.body 是 ReadableStream，通过 getReader() 异步读取
   const reader = response.body!.getReader()
-  const decoder = new TextDecoder() // 将字节流转为 UTF-8 字符串
-
-  /** 缓冲区：存储上一次读取后剩余的不完整行 */
+  const decoder = new TextDecoder()
   let buffer = ''
 
   while (true) {
-    // 读取下一个数据块（chunk）
     const { done, value } = await reader.read()
 
-    // done = true 表示流已结束
     if (done) {
       console.info('[API] ✅ SSE 流读取完毕')
       break
     }
 
-    // 将新到达的二进制数据追加到缓冲区，并转成字符串
     buffer += decoder.decode(value, { stream: true })
 
-    // 按 SSE 协议规定的换行符分割
-    // 每条 SSE 消息格式为：event: <事件名>\ndata: <JSON>\n\n
     const lines = buffer.split('\n')
-    // 最后一行留在缓冲区（可能是不完整的，等待下次数据到达）
     buffer = lines.pop() ?? ''
 
     for (const line of lines) {
-      // 跳过空行
       if (!line.trim()) continue
 
-      // SSE 数据行以 "data: " 开头
       if (line.startsWith('data: ')) {
-        const jsonStr = line.slice(6).trim() // 去掉 "data: " 前缀
-
+        const jsonStr = line.slice(6).trim()
         if (!jsonStr) continue
 
         try {
           const data = JSON.parse(jsonStr) as Record<string, unknown>
 
-          // ── chunk 事件 ──
-          // content 字段是 string，且不是 done 事件（done 事件包含 sessionId）
           if (typeof data['content'] === 'string' && !('sessionId' in data)) {
             onChunk(data['content'] as string)
-          }
-          // ── done 事件 ──
-          else if (typeof data['sessionId'] === 'string') {
+          } else if (typeof data['sessionId'] === 'string') {
             console.info(`[API] ✅ SSE done [${data['sessionId']}] 传输完成`)
             onDone(data['content'] as string)
-          }
-          // ── error 事件 ──
-          else if (typeof data['error'] === 'string') {
+          } else if (typeof data['error'] === 'string') {
             console.error('[API] ❌ SSE error 事件：', data['error'])
             onError(new Error(data['error'] as string))
           }
         } catch {
-          // JSON 解析失败（收到不完整的 JSON），直接跳过，不中断处理
           console.warn('[API] ⚠️  SSE 行解析失败，跳过：', jsonStr.slice(0, 50))
         }
       }
@@ -183,17 +152,17 @@ export async function sendChatStream(
 
 /**
  * 清除指定会话（服务端删除消息历史）
+ *
  * 调用时机：用户点击"新对话"或"清空当前对话"按钮
+ * 注意：即使请求失败也不 throw，前端已同步清除了本地状态
  */
 export async function clearSession(sessionId: string): Promise<void> {
   console.info(`[API] DELETE /session/${sessionId}`)
 
   try {
-    const res = await fetch(`${BASE_URL}/session/${sessionId}`, { method: 'DELETE' })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await request.delete(`/session/${sessionId}`)
     console.info(`[API] ✅ 会话 ${sessionId} 已清除`)
   } catch (err) {
-    // 清除会话失败通常是网络问题，Print 错误但不 throw（前端已同步清除了本地状态）
     console.error(`[API] ❌ 清除会话 ${sessionId} 失败：`, err)
   }
 }
@@ -206,6 +175,9 @@ export async function clearSession(sessionId: string): Promise<void> {
  * 调用时机：
  *   - App.vue 挂载时（onMounted）
  *   - SidebarPanel 每 30 秒轮询一次
+ *
+ * 注意：健康检查使用原生 fetch（不走 /api 代理），
+ * 直接请求 /health 端点，避免被 Axios 拦截器误报错误。
  *
  * @returns true = Agent 在线，false = Agent 离线或网络不可达
  */
@@ -224,19 +196,32 @@ export async function healthCheck(): Promise<boolean> {
 
 // ─── 会话列表 & 历史 ──────────────────────────────────────
 
+/**
+ * 获取所有会话列表（用于侧边栏展示）
+ */
 export async function getSessions(): Promise<SessionMeta[]> {
-  console.info('[API] GET /api/sessions')
-  const res = await fetch(`${BASE_URL}/sessions`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return res.json()
+  console.info('[API] GET /sessions')
+
+  const { data } = await request.get<SessionMeta[]>('/sessions')
+
+  console.info(`[API] ✅ 获取到 ${data.length} 个会话`)
+  return data
 }
 
+/**
+ * 获取指定会话的对话历史（不含 system prompt）
+ *
+ * 返回时过滤掉 system/tool 消息，只保留 user/assistant 对话
+ */
 export async function getHistory(sessionId: string): Promise<ChatMessage[]> {
-  console.info(`[API] GET /api/history/${sessionId}`)
-  const res = await fetch(`${BASE_URL}/history/${sessionId}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data = await res.json() as { sessionId: string; history: { role: string; content: string; tool_call_id?: string }[] }
-  return data.history
+  console.info(`[API] GET /history/${sessionId}`)
+
+  const { data } = await request.get<{
+    sessionId: string
+    history: { role: string; content: string; tool_call_id?: string }[]
+  }>(`/history/${sessionId}`)
+
+  const messages = data.history
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m, i) => ({
       id: `${sessionId}_${i}`,
@@ -244,4 +229,35 @@ export async function getHistory(sessionId: string): Promise<ChatMessage[]> {
       content: m.content,
       timestamp: Date.now(),
     }))
+
+  console.info(`[API] ✅ 加载会话 ${sessionId} 历史：${messages.length} 条`)
+  return messages
+}
+
+// ─── 用户画像 ──────────────────────────────────────────────
+
+/**
+ * 获取用户画像（偏好设置）
+ */
+export async function getProfile(): Promise<UserProfile> {
+  console.info('[API] GET /profile')
+
+  const { data } = await request.get<UserProfile>('/profile')
+
+  console.info(`[API] ✅ 获取用户画像：${data.diet_type || '无特殊膳食'} | ${data.skill_level}`)
+  return data
+}
+
+/**
+ * 更新用户画像
+ *
+ * @param updates - 部分画像字段（只传需要更新的字段）
+ */
+export async function updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
+  console.info('[API] PUT /profile', updates)
+
+  const { data } = await request.put<UserProfile>('/profile', updates)
+
+  console.info(`[API] ✅ 用户画像已更新`)
+  return data
 }

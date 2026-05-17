@@ -28,26 +28,37 @@ const { containerRef } = useScrollToBottom(() =>
 </script>
 
 <style scoped>
-/* ── 容器 ─────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   MessageList — 高级消息列表
+   渐变遮罩 · 平滑滚动 · 优雅间距
+   ══════════════════════════════════════════════════════════ */
+
 .messages-container {
-  flex: 1;            /* 占据主区域剩余所有高度 */
-  overflow-y: auto;   /* 内容超出时滚动 */
-  padding: 24px;
-  scroll-behavior: smooth; /* 平滑滚动效果 */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(16px, 3vw, 32px);
+  scroll-behavior: smooth;
   display: flex;
   flex-direction: column;
-  gap: 0;             /* 消息间距由组件自己控制 */
+  overscroll-behavior: contain;
+  position: relative;
 }
 
-/* ── 消息列表 ─────────────────────────────────────────── */
 .messages-list {
   display: flex;
   flex-direction: column;
-  gap: 20px;         /* 每条消息之间的间距 */
+  gap: clamp(16px, 3vw, 28px);
+  margin-block-start: auto;
 }
 
-/* ── 移动端适配 ──────────────────────────────────────── */
-@media (max-width: 768px) {
-  .messages-container { padding: 16px; }
+@media (width < 640px) {
+  .messages-container {
+    padding: 12px;
+  }
+
+  .messages-list {
+    gap: 14px;
+  }
 }
 </style>

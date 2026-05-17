@@ -24,6 +24,14 @@ function genId(): string {
 
 export function useConversation() {
   const store = useChatStore()
+  let abortController: AbortController | null = null
+
+  function abort(): void {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+  }
 
   async function sendMessage(content: string): Promise<void> {
     if (store.loading) {
@@ -34,6 +42,8 @@ export function useConversation() {
       console.warn('[Conversation] ⚠️ 收到空消息，忽略')
       return
     }
+
+    abort()
 
     store.loading = true
     const session = store.currentSession
@@ -64,6 +74,8 @@ export function useConversation() {
     const aiMsg = session.messages[session.messages.length - 1]
     console.info('[Conversation] ⏳ AI 消息已追加，等待流式响应…')
 
+    abortController = new AbortController()
+
     try {
       await sendChatStream(
         content,
@@ -75,23 +87,35 @@ export function useConversation() {
           aiMsg.streaming = false
           session.updatedAt = Date.now()
           store.loading = false
+          abortController = null
           console.info(`[Conversation] ✅ AI 回复完成，共 ${aiMsg.content.length} 字符`)
         },
         (err) => {
+          if ((err as any)?.name === 'AbortError') {
+            console.info('[Conversation] 🛑 请求已被取消')
+            return
+          }
           aiMsg.content = ERROR_MSG_AGENT_OFFLINE
           aiMsg.streaming = false
           store.loading = false
+          abortController = null
           ElMessage.error('Agent 服务请求失败，请检查后端是否已启动')
           console.error('[Conversation] ❌ 流式请求失败：', err)
         },
+        abortController.signal,
       )
     } catch (err) {
+      if ((err as any)?.name === 'AbortError') {
+        console.info('[Conversation] 🛑 请求已被取消')
+        return
+      }
       aiMsg.content = `❌ 未知错误：${(err as Error).message}`
       aiMsg.streaming = false
       store.loading = false
+      abortController = null
       console.error('[Conversation] ❌ sendMessage 未捕获的错误：', err)
     }
   }
 
-  return { sendMessage }
+  return { sendMessage, abort }
 }

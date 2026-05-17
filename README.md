@@ -6,21 +6,38 @@
 
 ```
 cooking-ai/
-├── cooking-agent/          ← Node.js Agent 后端（TypeScript，端口 3001）
+├── cooking-agent/          ← Node.js Agent 后端（TypeScript，端口 9000）
 │   ├── src/
 │   │   ├── index.ts        ← Express 服务入口
 │   │   ├── agent.ts        ← CookingAgent 核心（ReAct + Function Calling）
 │   │   ├── prompts.ts      ← 系统提示词（动态生成工具描述）
 │   │   ├── types.ts        ← 核心类型
-│   │   └── tools/          ← 工具目录
-│   │       ├── types.ts    ← 工具类型定义
-│   │       ├── index.ts    ← 工具注册表
-│   │       ├── recipe.ts   ← 菜谱查询
-│   │       ├── nutrition.ts← 营养计算
-│   │       ├── safety.ts   ← 食品安全
-│   │       ├── technique.ts← 烹饪技法
-│   │       └── suggest.ts  ← 食材推荐
-│   └── README.md
+│   │   ├── loader.ts       ← Skill 文件加载器
+│   │   ├── llm/            ← LLM Provider 抽象层
+│   │   │   ├── index.ts    ← Provider 注册中心
+│   │   │   ├── types.ts    ← 统一接口定义
+│   │   │   └── deepseek.ts ← DeepSeek Provider 实现
+│   │   ├── db/             ← 数据库层
+│   │   │   ├── index.ts    ← 连接管理
+│   │   │   ├── migrate.ts  ← 数据库迁移
+│   │   │   ├── session.repository.ts
+│   │   │   ├── message.repository.ts
+│   │   │   └── user-profile.repository.ts
+│   │   ├── tools/          ← 工具目录
+│   │   │   ├── types.ts    ← 工具类型定义
+│   │   │   ├── index.ts    ← 工具注册表
+│   │   │   ├── recipe.ts   ← 菜谱查询
+│   │   │   ├── nutrition.ts← 营养计算
+│   │   │   ├── safety.ts   ← 食品安全
+│   │   │   ├── technique.ts← 烹饪技法
+│   │   │   ├── suggest.ts  ← 食材推荐
+│   │   │   ├── substitute.ts ← 食材替换
+│   │   │   └── diet.ts     ← 膳食适配
+│   │   └── knowledge/      ← RAG 知识库
+│   │       ├── types.ts
+│   │       └── retriever.ts ← TF-IDF 检索器
+│   ├── skills/             ← Skill 定义（.md 文件）
+│   └── docs/               ← 开发文档
 │
 └── cooking-app/            ← Vue3 前端（端口 5173）
     ├── src/
@@ -29,10 +46,16 @@ cooking-ai/
     │   │   ├── SidebarPanel.vue
     │   │   ├── MessageList.vue
     │   │   ├── MessageBubble.vue
-    │   │   └── InputBar.vue
+    │   │   ├── InputBar.vue
+    │   │   ├── WelcomeScreen.vue
+    │   │   └── ProfileSettings.vue
     │   ├── stores/chat.ts      ← Pinia 状态管理
-    │   ├── api/chat.ts         ← TypeScript API 客户端（SSE）
+    │   ├── api/
+    │   │   ├── request.ts      ← Axios 实例（拦截器）
+    │   │   └── chat.ts         ← API 客户端
+    │   ├── hooks/              ← 自定义 Hooks
     │   ├── router/index.ts     ← Vue Router
+    │   ├── constants/index.ts  ← 公共常量
     │   └── types/index.ts      ← 前端 TS 类型
     └── README.md
 ```
@@ -42,10 +65,17 @@ cooking-ai/
 | 特性 | 说明 |
 |------|------|
 | 🤖 **真正的 Agent** | ReAct 推理循环 + Function Calling |
-| 🔧 **5 大工具** | 菜谱 / 营养 / 安全 / 技法 / 推荐 |
+| 🔧 **7 大工具** | 菜谱 / 营养 / 安全 / 技法 / 推荐 / 食材替换 / 膳食适配 |
 | ⚡ **流式响应** | SSE 打字机效果 |
-| 💬 **多轮对话** | Session 级别记忆 |
+| 💬 **多轮对话** | Session 级别记忆 + 历史持久化 |
 | 📱 **响应式** | 移动端适配 |
+| 🔄 **LLM 重试** | 指数退避自动重试（最多 3 次） |
+| 🛡️ **请求限流** | IP 级别限流（每秒 10 次） |
+| 👤 **用户画像** | 过敏食材 / 膳食模式 / 烹饪水平偏好 |
+| 📚 **RAG 知识库** | TF-IDF 检索增强生成 |
+| 🔌 **多模型支持** | DeepSeek / OpenAI 可切换 |
+| 🎨 **Markdown 渲染** | AI 回复支持富文本展示 |
+| ⌨️ **快捷键** | Ctrl+N 新建对话 |
 
 ## 快速启动
 
@@ -77,9 +107,11 @@ npm run dev   # 访问 http://localhost:5173
 | `check_food_safety` | 问食品安全 | "四季豆能吃吗" |
 | `explain_technique` | 问烹饪技法 | "炒菜怎么才不粘锅" |
 | `suggest_dishes` | 问食材推荐 | "我冰箱里有鸡胸肉和西兰花，能做什么" |
+| `suggest_substitute` | 问食材替代 | "没有料酒能用什么代替" |
+| `check_diet_compatibility` | 问膳食适配 | "这道菜适合生酮饮食吗" |
 
 ## 技术栈
 
-**后端**：`TypeScript` + `Node.js` + `Express` + `OpenAI SDK`
+**后端**：`TypeScript` + `Node.js` + `Express` + `OpenAI SDK` + `better-sqlite3`
 
-**前端**：`Vue 3` + `Vite` + `Pinia` + `Vue Router` + `TypeScript` + `Element Plus`
+**前端**：`Vue 3` + `Vite` + `Pinia` + `Vue Router` + `TypeScript` + `Element Plus` + `Axios` + `marked`

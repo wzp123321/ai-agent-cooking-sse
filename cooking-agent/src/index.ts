@@ -28,12 +28,13 @@ import cors from 'cors'
 import 'dotenv/config'
 import { CookingAgent } from './agent'
 import { runMigrations } from './db/migrate'
+import { userProfileRepo } from './db/user-profile.repository'
 import type { ChatRequestBody } from './types'
 
 // ─── Express 应用初始化 ────────────────────────────────────
 
 const app = express()
-const PORT = Number(process.env.PORT) || 3001
+const PORT = Number(process.env.PORT) || 9000
 
 console.log('═══════════════════════════════════════════════')
 console.log('   🍳 厨神小助 Agent 服务启动中…')
@@ -46,9 +47,59 @@ console.log('══════════════════════�
 app.use(cors())
 console.info('[Middleware] ✅ CORS 已启用')
 
-// JSON 请求体解析：自动将 application/json 的请求体解析为 JS 对象
-app.use(express.json())
-console.info('[Middleware] ✅ JSON 解析中间件已启用')
+// JSON 请求体解析：限制 100KB 防止大请求攻击
+app.use(express.json({ limit: '100kb' }))
+console.info('[Middleware] ✅ JSON 解析中间件已启用（限制 100KB）')
+
+// 请求日志中间件
+app.use((req: Request, _res: Response, next: express.NextFunction) => {
+  const start = Date.now()
+  const { method, url } = req
+
+  _res.on('finish', () => {
+    const duration = Date.now() - start
+    const { statusCode } = _res
+    const level = statusCode >= 400 ? '⚠️' : '📥'
+    console.info(`[HTTP] ${level} ${method} ${url} → ${statusCode} (${duration}ms)`)
+  })
+
+  next()
+})
+
+// 简易请求限流（基于 IP，每秒最多 10 个请求）
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_MAX = 10
+const RATE_LIMIT_WINDOW_MS = 1000
+
+app.use((req: Request, res: Response, next: express.NextFunction) => {
+  const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown'
+  const now = Date.now()
+  const entry = rateLimitMap.get(ip)
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    next()
+    return
+  }
+
+  entry.count++
+  if (entry.count > RATE_LIMIT_MAX) {
+    console.warn(`[RateLimit] ⚠️ IP ${ip} 超过限流阈值（${entry.count}/${RATE_LIMIT_WINDOW_MS}ms）`)
+    res.status(429).json({ error: '请求过于频繁，请稍后再试' })
+    return
+  }
+
+  next()
+})
+
+// 定期清理限流记录（每 60 秒）
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(ip)
+  }
+}, 60_000)
+console.info('[Middleware] ✅ 请求限流已启用（每 IP 每秒最多 10 次）')
 
 // ─── 数据库初始化 ──────────────────────────────────────────
 
@@ -289,6 +340,46 @@ app.delete(
   },
 )
 
+// ─── 用户画像接口 ──────────────────────────────────────────
+
+/**
+ * GET /api/profile
+ * 获取用户画像（偏好设置）。
+ */
+app.get('/api/profile', (_req: Request, res: Response) => {
+  console.debug('[Route] GET /api/profile')
+  const profile = userProfileRepo.getOrCreate()
+  res.json(profile)
+})
+
+/**
+ * PUT /api/profile
+ * 更新用户画像。
+ *
+ * 请求 Body：
+ *   {
+ *     "allergies": ["花生", "海鲜"],
+ *     "diet_type": "生酮",
+ *     "skill_level": "beginner",
+ *     "disliked": ["香菜"],
+ *     "calorie_goal": 1800
+ *   }
+ */
+app.put('/api/profile', (req: Request, res: Response) => {
+  console.info('[Route] PUT /api/profile')
+  const { allergies, diet_type, skill_level, disliked, calorie_goal } = req.body
+
+  const profile = userProfileRepo.update('default', {
+    allergies,
+    diet_type,
+    skill_level,
+    disliked,
+    calorie_goal,
+  })
+
+  res.json(profile)
+})
+
 // ─── 全局错误处理 ──────────────────────────────────────────
 
 // Express 路由未匹配到时触发（404）
@@ -315,8 +406,11 @@ app.listen(PORT, () => {
   console.log(`   GET    /health               健康检查`)
   console.log(`   POST   /api/chat             普通对话`)
   console.log(`   POST   /api/chat/stream      流式对话（SSE）`)
+  console.log(`   GET    /api/sessions         会话列表`)
   console.log(`   GET    /api/history/:id      获取对话历史`)
   console.log(`   DELETE /api/session/:id      清除会话`)
+  console.log(`   GET    /api/profile          获取用户画像`)
+  console.log(`   PUT    /api/profile          更新用户画像`)
   console.log('')
   console.info('[Server] 🚀 服务就绪，等待请求…')
 })

@@ -80,175 +80,291 @@ const renderedContent = computed(() => {
 </script>
 
 <style scoped>
-/* ── 基础布局 ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   MessageBubble — 高级气泡设计
+   玻璃质感 · 多层阴影 · 弹性动画 · 精致排版
+   ══════════════════════════════════════════════════════════ */
+
 .message {
   display: flex;
-  gap: 12px;
-  animation: fadeInUp 0.25s ease; /* 入场动画：向上淡入 */
-  max-width: 860px;               /* 最大宽度，避免气泡过宽 */
+  gap: clamp(8px, 2vw, 12px);
+  animation: messageIn var(--duration-slow) var(--ease-spring) both;
+  max-width: min(860px, 100%);
 }
 
-/* 用户消息：右对齐 */
 .message.user {
   flex-direction: row-reverse;
-  margin-left: auto; /* 从右侧开始布局 */
+  margin-inline-start: auto;
 }
 
-/* 入场动画关键帧 */
-@keyframes fadeInUp {
+@keyframes messageIn {
   from {
     opacity: 0;
-    transform: translateY(8px); /* 轻微上移 */
+    transform: translateY(16px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 /* ── 头像 ─────────────────────────────────────────────── */
 .avatar {
-  width: 36px;
-  height: 36px;
+  --avatar-size: clamp(30px, 5vw, 38px);
+
+  width: var(--avatar-size);
+  height: var(--avatar-size);
   border-radius: 50%;
-  flex-shrink: 0;           /* 不参与 flex 压缩 */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  align-self: flex-end;     /* 与气泡底部对齐 */
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(15px, 2.5vw, 18px);
+  align-self: flex-end;
+  transition: transform var(--duration-fast) var(--ease-spring);
+  position: relative;
 }
 
+.avatar::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity var(--duration-normal);
+}
+
+.avatar:active { transform: scale(0.9); }
+
 .user-avatar {
-  background: var(--accent); /* 橙色背景 */
+  background: linear-gradient(135deg, #ff6b35, #e55a28);
+  box-shadow:
+    0 2px 8px rgba(255, 107, 53, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.user-avatar::after {
+  background: linear-gradient(135deg, rgba(255,107,53,0.4), transparent);
 }
 
 .assistant-avatar {
-  background: var(--bg-card);
+  background: linear-gradient(135deg, #1c1c22, #262630);
   border: 1px solid var(--border);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* ── 气泡 ─────────────────────────────────────────────── */
 .bubble {
-  max-width: calc(100% - 52px); /* 留出头像和间距的空间 */
-  padding: 12px 16px;
-  border-radius: 16px;
-  line-height: 1.7;       /* 行高，提升可读性 */
-  font-size: 14px;
-  overflow-wrap: break-word; /* 长单词/URL 溢出时换行 */
+  --bubble-padding: clamp(10px, 2vw, 14px) clamp(12px, 2.5vw, 18px);
+
+  max-width: calc(100% - var(--avatar-size) - clamp(8px, 2vw, 12px));
+  padding: var(--bubble-padding);
+  border-radius: clamp(12px, 2.5vw, 18px);
+  font-size: clamp(13px, 1.8vw, 15px);
+  line-height: 1.68;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-normal) var(--ease-out);
+  position: relative;
 }
 
-/* 用户气泡：橙色渐变 */
 .bubble.user {
-  background: linear-gradient(135deg, #ff6b35, #ff4500);
+  background: linear-gradient(135deg, #ff6b35 0%, #ff5722 50%, #e64a19 100%);
   color: #fff;
-  border-bottom-right-radius: 4px; /* 右下角做尖角效果 */
+  border-end-end-radius: clamp(3px, 0.6vw, 5px);
+  box-shadow:
+    0 4px 16px rgba(255, 107, 53, 0.25),
+    0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-/* AI 气泡：卡片背景 */
+.bubble.user::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0.08) 0%, transparent 50%);
+  pointer-events: none;
+}
+
 .bubble.assistant {
   background: var(--bg-card);
   border: 1px solid var(--border);
   color: var(--text-primary);
-  border-bottom-left-radius: 4px; /* 左下角做尖角效果 */
+  border-end-start-radius: clamp(3px, 0.6vw, 5px);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.2),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
 }
 
-/* ── Markdown 内容样式 ───────────────────────────────── */
-/* :deep() 穿透 scoped，选择 .markdown-body 内部的所有子元素 */
+.bubble.assistant:hover {
+  border-color: var(--border-light);
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+}
+
+/* ── Markdown 内容 ────────────────────────────────────── */
 .markdown-body :deep(h1),
 .markdown-body :deep(h2),
 .markdown-body :deep(h3) {
   color: var(--accent-light);
-  margin: 12px 0 6px;
+  margin-block: clamp(8px, 1.5vw, 14px) clamp(4px, 0.8vw, 8px);
   font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
-.markdown-body :deep(h2) { font-size: 15px; }
-.markdown-body :deep(h3) { font-size: 14px; }
-.markdown-body :deep(p) { margin: 6px 0; }
+.markdown-body :deep(h1) { font-size: clamp(16px, 2.5vw, 20px); }
+.markdown-body :deep(h2) { font-size: clamp(14px, 2.2vw, 17px); }
+.markdown-body :deep(h3) { font-size: clamp(13px, 2vw, 15px); }
+
+.markdown-body :deep(p) {
+  margin-block: clamp(4px, 0.8vw, 8px);
+}
 
 .markdown-body :deep(ul),
 .markdown-body :deep(ol) {
-  padding-left: 20px;
-  margin: 6px 0;
+  padding-inline-start: clamp(16px, 3vw, 24px);
+  margin-block: clamp(4px, 0.8vw, 8px);
 }
 
-.markdown-body :deep(li) { margin: 3px 0; }
+.markdown-body :deep(li) { margin-block: 3px; }
+.markdown-body :deep(li)::marker { color: var(--accent); }
 
-/* 行内代码 */
 .markdown-body :deep(code) {
-  background: rgba(255, 107, 53, 0.12);
+  background: var(--accent-soft);
   color: var(--accent-light);
-  padding: 2px 6px;
+  padding: 0.15em 0.45em;
   border-radius: 4px;
-  font-size: 13px;
-  font-family: 'Courier New', monospace;
+  font-size: 0.88em;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+  border: 1px solid rgba(255, 107, 53, 0.1);
 }
 
-/* 代码块 */
 .markdown-body :deep(pre) {
-  background: #111;
-  border-radius: 8px;
-  padding: 12px;
-  overflow-x: auto;        /* 水平滚动（代码块超出时） */
-  margin: 10px 0;
+  background: #0a0a0e;
+  border: 1px solid var(--border);
+  border-radius: clamp(6px, 1.2vw, 10px);
+  padding: clamp(10px, 2vw, 16px);
+  overflow-x: auto;
+  margin-block: clamp(8px, 1.5vw, 14px);
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.3);
+  position: relative;
 }
 
 .markdown-body :deep(pre code) {
   background: none;
-  color: #d0d0d0;
+  border: none;
+  color: #c8c8d4;
   padding: 0;
-  font-size: 13px;
+  font-size: clamp(12px, 1.6vw, 14px);
+  line-height: 1.6;
 }
 
-.markdown-body :deep(strong) { color: var(--accent-light); }
+.markdown-body :deep(strong) {
+  color: var(--accent-light);
+  font-weight: 600;
+}
+
+.markdown-body :deep(em) {
+  color: var(--text-secondary);
+}
 
 .markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--accent);
-  padding-left: 12px;
+  border-inline-start: 3px solid var(--accent);
+  padding-inline-start: clamp(10px, 2vw, 16px);
   color: var(--text-secondary);
-  margin: 8px 0;
+  margin-block: clamp(6px, 1vw, 10px);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  padding-block: 4px;
 }
 
 .markdown-body :deep(hr) {
   border: none;
-  border-top: 1px solid var(--border);
-  margin: 12px 0;
+  border-block-start: 1px solid var(--border);
+  margin-block: clamp(10px, 2vw, 16px);
 }
 
-/* 表格 */
+.markdown-body :deep(a) {
+  color: var(--accent-light);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 140, 90, 0.3);
+  transition: border-color var(--duration-fast);
+}
+
+.markdown-body :deep(a:hover) {
+  border-bottom-color: var(--accent-light);
+}
+
 .markdown-body :deep(table) {
   width: 100%;
   border-collapse: collapse;
-  margin: 10px 0;
-  font-size: 13px;
+  margin-block: clamp(8px, 1.5vw, 12px);
+  font-size: clamp(12px, 1.6vw, 14px);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
 }
 
 .markdown-body :deep(th),
 .markdown-body :deep(td) {
   border: 1px solid var(--border);
-  padding: 6px 10px;
-  text-align: left;
+  padding: clamp(4px, 1vw, 8px) clamp(6px, 1.5vw, 12px);
+  text-align: start;
 }
 
 .markdown-body :deep(th) {
   background: var(--bg-hover);
   color: var(--accent-light);
+  font-weight: 600;
 }
 
-/* ── 打字光标 ─────────────────────────────────────────── */
+.markdown-body :deep(tr:nth-child(even)) {
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* ── 打字指示器（三点跳动） ──────────────────────────── */
 .typing-cursor {
   display: inline-block;
-  width: 2px;
-  height: 1em;
-  background: var(--accent); /* 橙色闪烁光标 */
-  margin-left: 2px;
-  vertical-align: text-bottom; /* 与文字基线对齐 */
-  animation: blink 0.8s infinite;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-inline-start: 4px;
+  vertical-align: middle;
+  animation: dotPulse 1.2s ease-in-out infinite;
+  box-shadow: 0 0 6px var(--accent-glow);
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }  /* 亮 */
-  50%       { opacity: 0; }  /* 灭，形成闪烁效果 */
+@keyframes dotPulse {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* ── 响应式断点 ───────────────────────────────────────── */
+@media (width < 640px) {
+  .message { gap: 6px; }
+
+  .bubble {
+    --bubble-padding: 8px 12px;
+    border-radius: 12px;
+  }
+
+  .bubble.user      { border-end-end-radius: 3px; }
+  .bubble.assistant { border-end-start-radius: 3px; }
+}
+
+@media (width >= 1200px) {
+  .message { max-width: 860px; }
+  .bubble  { font-size: 15px; }
 }
 </style>

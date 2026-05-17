@@ -62,6 +62,14 @@
         </div>
 
         <!-- 清空当前对话按钮（hover 时显示 tooltip） -->
+        <el-tooltip content="个人偏好设置" placement="bottom">
+          <el-button
+            :icon="Setting"
+            text
+            circle
+            @click="profileOpen = true"
+          />
+        </el-tooltip>
         <el-tooltip content="清空当前对话" placement="bottom">
           <el-button
             :icon="Delete"
@@ -79,6 +87,8 @@
       <InputBar />
     </main>
   </div>
+
+  <ProfileSettings :visible="profileOpen" @close="profileOpen = false" />
 </template>
 
 <script setup lang="ts">
@@ -90,12 +100,13 @@
  *   - 移动端响应式（侧边栏 drawer 切换）
  *   - 提供"清空对话"的事件处理
  */
-import { ref, onMounted } from 'vue'
-import { Menu, Delete } from '@element-plus/icons-vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { Menu, Delete, Setting } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import SidebarPanel from '@/components/SidebarPanel.vue'
 import MessageList from '@/components/MessageList.vue'
 import InputBar from '@/components/InputBar.vue'
+import ProfileSettings from '@/components/ProfileSettings.vue'
 import { useChatStore } from '@/stores/chat'
 import { APP_NAME, APP_DESC } from '@/constants'
 
@@ -103,10 +114,22 @@ const chatStore = useChatStore()
 
 onMounted(() => {
   chatStore.loadSessions()
+  document.addEventListener('keydown', handleGlobalKeydown)
 })
 
-/** 移动端抽屉开关状态（桌面端不受影响） */
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleGlobalKeydown)
+})
+
 const drawerOpen = ref(false)
+const profileOpen = ref(false)
+
+function handleGlobalKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+    e.preventDefault()
+    chatStore.newSession()
+  }
+}
 
 /**
  * 清空当前对话
@@ -134,45 +157,58 @@ async function handleClear() {
 </script>
 
 <style scoped>
-/* ── 布局 ──────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   ChatView — 高级布局
+   CSS Grid · 玻璃头部 · 氛围光效
+   ══════════════════════════════════════════════════════════ */
+
 .layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: clamp(240px, 22vw, 280px) 1fr;
   width: 100%;
-  height: 100vh;   /* 全屏高度，溢出隐藏 */
+  height: 100dvh;
   overflow: hidden;
 }
 
-/* ── 桌面端侧边栏 ─────────────────────────────────────── */
 .sidebar-desktop {
-  width: 260px;
-  flex-shrink: 0;       /* 不参与 flex 压缩，始终保持 260px */
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
   background: var(--bg-secondary);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* ── 主聊天区 ─────────────────────────────────────────── */
 .chat-main {
-  flex: 1;             /* 占据剩余全部宽度 */
   display: flex;
   flex-direction: column;
-  min-width: 0;        /* 防止 flex 子项超出容器 */
+  min-width: 0;
+  min-height: 0;
   background: var(--bg-primary);
+  position: relative;
 }
 
-/* ── 顶部栏 ───────────────────────────────────────────── */
 .chat-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
-  flex-shrink: 0;      /* 不参与垂直压缩 */
+  gap: clamp(8px, 1.5vw, 14px);
+  padding: clamp(10px, 2vw, 14px) clamp(14px, 3vw, 24px);
+  border-block-end: 1px solid var(--border);
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
 }
 
-/* 移动端菜单按钮（默认隐藏） */
+.chat-header::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
+  pointer-events: none;
+}
+
 .menu-btn {
   display: none;
 }
@@ -182,30 +218,51 @@ async function handleClear() {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .header-title {
-  font-size: 16px;
+  font-size: clamp(14px, 2vw, 17px);
   font-weight: 600;
   color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .header-sub {
-  font-size: 12px;
+  font-size: clamp(11px, 1.4vw, 13px);
   color: var(--text-secondary);
+  font-weight: 400;
 }
 
-/* ── 移动端响应式（<768px） ──────────────────────────── */
-@media (max-width: 768px) {
+/* ── 响应式：平板 ────────────────────────────────────── */
+@media (width < 900px) {
+  .layout {
+    grid-template-columns: clamp(200px, 25vw, 240px) 1fr;
+  }
+}
+
+/* ── 响应式：手机 ────────────────────────────────────── */
+@media (width < 768px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar-desktop {
-    display: none;      /* 隐藏桌面侧边栏 */
+    display: none;
   }
+
   .menu-btn {
-    display: flex;      /* 显示汉堡菜单按钮 */
+    display: flex;
+  }
+
+  .chat-header {
+    padding: 8px 12px;
   }
 }
 
-/* ── 抽屉样式覆盖 ─────────────────────────────────────── */
 ::deep(.sidebar-drawer .el-drawer__body) {
   padding: 0;
   background: var(--bg-secondary);

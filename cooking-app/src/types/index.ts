@@ -50,3 +50,14 @@ export interface SSEDoneData {
 export interface SSEErrorData {
   error: string
 }
+
+export interface UserProfile {
+  id: string
+  allergies: string[]
+  diet_type: string
+  skill_level: 'beginner' | 'intermediate' | 'expert'
+  disliked: string[]
+  calorie_goal: number
+  created_at: number
+  updated_at: number
+}

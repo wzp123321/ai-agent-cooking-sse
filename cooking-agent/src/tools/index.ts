@@ -18,6 +18,9 @@ import { nutrition_tool, nutrition_impl } from './nutrition'
 import { safety_tool, safety_impl } from './safety'
 import { technique_tool, technique_impl } from './technique'
 import { suggest_tool, suggest_impl } from './suggest'
+import { substitute_tool, substitute_impl } from './substitute'
+import { diet_tool, diet_impl } from './diet'
+import { knowledge_tool, knowledge_impl } from './knowledge'
 
 // ─── 工具注册表 ────────────────────────────────────────────
 
@@ -31,6 +34,9 @@ export const TOOL_LIST: Tool[] = [
   safety_tool,
   technique_tool,
   suggest_tool,
+  substitute_tool,
+  diet_tool,
+  knowledge_tool,
 ]
 
 /**
@@ -43,6 +49,9 @@ const TOOL_IMPLS: Record<string, ToolImpl<Record<string, unknown>>> = {
   [safety_tool.name]:     safety_impl     as ToolImpl<Record<string, unknown>>,
   [technique_tool.name]:  technique_impl  as ToolImpl<Record<string, unknown>>,
   [suggest_tool.name]:    suggest_impl    as ToolImpl<Record<string, unknown>>,
+  [substitute_tool.name]: substitute_impl as ToolImpl<Record<string, unknown>>,
+  [diet_tool.name]:       diet_impl       as ToolImpl<Record<string, unknown>>,
+  [knowledge_tool.name]:  knowledge_impl  as ToolImpl<Record<string, unknown>>,
 }
 
 // ─── 工具执行函数 ─────────────────────────────────────────
@@ -128,4 +137,4 @@ export async function executeTools(
 }
 
 // ─── 工具列表（供 Agent 直接引用）─────────────────────────
-export { recipe_tool, nutrition_tool, safety_tool, technique_tool, suggest_tool }
+export { recipe_tool, nutrition_tool, safety_tool, technique_tool, suggest_tool, substitute_tool, diet_tool, knowledge_tool }

@@ -163,14 +163,18 @@ function handleQuickQuestion(q: string) {
 </script>
 
 <style scoped>
-/* ── 容器 ──────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   SidebarPanel — 现代响应式样式
+   策略：clamp() 流体间距 + 逻辑属性 + 滚动优化
+   ══════════════════════════════════════════════════════════ */
+
 .sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 20px 16px;
-  gap: 16px;          /* 子元素之间的间距 */
-  overflow: hidden;   /* 超出容器高度隐藏 */
+  padding: clamp(14px, 2.5vw, 22px) clamp(12px, 2vw, 18px);
+  gap: clamp(12px, 2vw, 18px);
+  overflow: hidden;
 }
 
 /* ── Logo ──────────────────────────────────────────────── */
@@ -180,62 +184,79 @@ function handleQuickQuestion(q: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: clamp(6px, 1.2vw, 12px);
 }
 
-.logo-icon { font-size: 30px; }
+.logo-icon {
+  font-size: clamp(24px, 4vw, 34px);
+  filter: drop-shadow(0 2px 4px rgba(255, 107, 53, 0.3));
+}
 
 .logo-text {
-  font-size: 20px;
+  font-size: clamp(17px, 2.5vw, 22px);
   font-weight: 700;
-  /* 渐变色文字效果 */
   background: linear-gradient(135deg, var(--accent), var(--accent-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .logo-sub {
   color: var(--text-secondary);
-  font-size: 12px;
-  margin-top: 4px;
+  font-size: clamp(11px, 1.4vw, 13px);
+  margin-block-start: clamp(2px, 0.5vw, 6px);
 }
 
 /* ── 新建按钮 ─────────────────────────────────────────── */
 .new-chat-btn {
   width: 100%;
+  border-radius: clamp(8px, 1.5vw, 12px);
+  font-weight: 500;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.new-chat-btn:active {
+  transform: scale(0.97);
 }
 
 /* ── 区块标题 ─────────────────────────────────────────── */
 .section-title {
-  font-size: 11px;
+  font-size: clamp(10px, 1.3vw, 12px);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 8px;
+  letter-spacing: 0.06em;
+  margin-block-end: clamp(6px, 1vw, 10px);
+  font-weight: 500;
 }
 
 /* ── 会话列表 ─────────────────────────────────────────── */
 .session-section {
-  flex-shrink: 0;      /* 不参与 flex 拉伸 */
+  flex-shrink: 0;
 }
 
 .session-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 160px;   /* 限制高度，超出滚动 */
+  gap: 2px;
+  max-height: clamp(120px, 20vh, 180px);
   overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .session-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: clamp(6px, 1vw, 10px);
+  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 12px);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  font-size: 13px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.15s ease;
+  font-size: clamp(12px, 1.5vw, 14px);
   color: var(--text-secondary);
 }
 
@@ -244,9 +265,14 @@ function handleQuickQuestion(q: string) {
   color: var(--text-primary);
 }
 
+.session-item:active {
+  transform: scale(0.98);
+}
+
 .session-item.active {
   background: var(--bg-hover);
   color: var(--accent);
+  font-weight: 500;
 }
 
 .session-icon { flex-shrink: 0; }
@@ -254,43 +280,50 @@ function handleQuickQuestion(q: string) {
 .session-title {
   flex: 1;
   overflow: hidden;
-  text-overflow: ellipsis; /* 标题过长时显示省略号 */
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .session-del {
-  opacity: 0;          /* 默认隐藏 */
+  opacity: 0;
   flex-shrink: 0;
+  transition: opacity 0.15s ease;
 }
-/* hover 时显示删除按钮 */
+
 .session-item:hover .session-del { opacity: 1; }
 
 /* ── 快捷问题 ─────────────────────────────────────────── */
 .quick-section {
-  flex: 1;             /* 占据剩余所有空间 */
+  flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .quick-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;    /* 内容超出时滚动 */
+  gap: clamp(4px, 0.8vw, 8px);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .quick-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  font-size: 12px;
+  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 12px);
+  font-size: clamp(11px, 1.4vw, 13px);
   color: var(--text-secondary);
   cursor: pointer;
-  text-align: left;    /* 左对齐，便于阅读长文本 */
-  transition: all 0.2s;
-  line-height: 1.4;
+  text-align: start;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+  line-height: 1.45;
 }
 
 .quick-btn:hover {
@@ -299,30 +332,41 @@ function handleQuickQuestion(q: string) {
   border-color: var(--accent);
 }
 
+.quick-btn:active {
+  transform: scale(0.98);
+}
+
 /* ── 底部状态 ─────────────────────────────────────────── */
 .sidebar-footer {
-  margin-top: auto;   /* 始终贴底 */
+  margin-block-start: auto;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: clamp(6px, 1vw, 10px);
+  font-size: clamp(11px, 1.4vw, 13px);
   color: var(--text-secondary);
   flex-shrink: 0;
+  padding-block-start: clamp(8px, 1.5vw, 12px);
+  border-block-start: 1px solid var(--border);
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: clamp(7px, 1vw, 9px);
+  height: clamp(7px, 1vw, 9px);
   border-radius: 50%;
   background: var(--text-muted);
-  transition: background 0.3s;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
   flex-shrink: 0;
 }
 
 .status-dot.online {
   background: #4caf50;
-  box-shadow: 0 0 6px #4caf50; /* 发光效果 */
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
 }
 
-.status-dot.offline { background: #f44336; }
+.status-dot.offline {
+  background: #f44336;
+  box-shadow: 0 0 8px rgba(244, 67, 54, 0.3);
+}
 </style>

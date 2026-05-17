@@ -7,22 +7,25 @@ export interface MessageRow {
   role: string
   content: string
   tool_call_id: string | null
+  tool_calls: string | null
   created_at: number
 }
 
 export class MessageRepository {
   insert(sessionId: string, msg: Message, now: number): MessageRow {
     const db = getDb()
+    const toolCallsJson = msg.tool_calls ? JSON.stringify(msg.tool_calls) : null
     const result = db.prepare(
-      `INSERT INTO messages (session_id, role, content, tool_call_id, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-    ).run(sessionId, msg.role, msg.content, msg.tool_call_id ?? null, now)
+      `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(sessionId, msg.role, msg.content, msg.tool_call_id ?? null, toolCallsJson, now)
     return {
       id: result.lastInsertRowid as number,
       session_id: sessionId,
       role: msg.role,
       content: msg.content,
       tool_call_id: msg.tool_call_id ?? null,
+      tool_calls: toolCallsJson,
       created_at: now,
     }
   }
@@ -44,6 +47,7 @@ export class MessageRepository {
         role: r.role as Message['role'],
         content: r.content,
         tool_call_id: r.tool_call_id ?? undefined,
+        tool_calls: r.tool_calls ? JSON.parse(r.tool_calls) : undefined,
       }))
   }
 

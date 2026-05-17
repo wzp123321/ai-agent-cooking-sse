@@ -14,6 +14,14 @@ export interface Message {
   content: string
   name?: string
   tool_call_id?: string
+  tool_calls?: Array<{
+    id: string
+    type: 'function'
+    function: {
+      name: string
+      arguments: string
+    }
+  }>
 }
 
 // ─── 普通对话返回值 ────────────────────────────────────────
