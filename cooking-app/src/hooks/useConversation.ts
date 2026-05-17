@@ -14,7 +14,7 @@
 
 import { ElMessage } from 'element-plus'
 import { useChatStore } from '@/stores/chat'
-import { sendChatStream } from '@/api/chat'
+import { sendChatStream, sendVisionChat } from '@/api/chat'
 import { MAX_SESSION_TITLE_LENGTH, ERROR_MSG_AGENT_OFFLINE } from '@/constants'
 import type { ChatMessage } from '@/types'
 
@@ -93,6 +93,9 @@ export function useConversation() {
         (err) => {
           if ((err as any)?.name === 'AbortError') {
             console.info('[Conversation] 🛑 请求已被取消')
+            aiMsg.streaming = false
+            store.loading = false
+            abortController = null
             return
           }
           aiMsg.content = ERROR_MSG_AGENT_OFFLINE
@@ -107,6 +110,9 @@ export function useConversation() {
     } catch (err) {
       if ((err as any)?.name === 'AbortError') {
         console.info('[Conversation] 🛑 请求已被取消')
+        aiMsg.streaming = false
+        store.loading = false
+        abortController = null
         return
       }
       aiMsg.content = `❌ 未知错误：${(err as Error).message}`
@@ -117,5 +123,59 @@ export function useConversation() {
     }
   }
 
-  return { sendMessage, abort }
+  async function sendVisionMessage(imageBase64: string, text?: string): Promise<void> {
+    if (store.loading) {
+      console.warn('[Conversation] ⚠️ 正在发送中，忽略重复请求')
+      return
+    }
+
+    abort()
+
+    store.loading = true
+    const session = store.currentSession
+
+    const contentText = text || '帮我看看这些食材可以做什么菜？'
+    console.info(`[Conversation] 📷 发送图片消息 [${session.id}]`)
+
+    if (session.messages.length === 0) {
+      session.title = contentText.slice(0, MAX_SESSION_TITLE_LENGTH) + (contentText.length > MAX_SESSION_TITLE_LENGTH ? '…' : '')
+    }
+
+    const userMsg: ChatMessage = {
+      id: genId(),
+      role: 'user',
+      content: text || '📷 拍照识别食材',
+      timestamp: Date.now(),
+      image: `data:image/jpeg;base64,${imageBase64}`,
+    }
+    session.messages.push(userMsg)
+    session.updatedAt = Date.now()
+
+    session.messages.push({
+      id: genId(),
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      streaming: true,
+    })
+    const aiMsg = session.messages[session.messages.length - 1]
+
+    try {
+      const result = await sendVisionChat(imageBase64, text)
+
+      aiMsg.content = result.content
+      aiMsg.streaming = false
+      session.updatedAt = Date.now()
+      store.loading = false
+      console.info(`[Conversation] ✅ 图片识别完成，共 ${aiMsg.content.length} 字符`)
+    } catch (err) {
+      aiMsg.content = `❌ 图片识别失败：${(err as Error).message}`
+      aiMsg.streaming = false
+      store.loading = false
+      ElMessage.error('图片识别失败，请检查 Vision API 配置')
+      console.error('[Conversation] ❌ 图片识别失败：', err)
+    }
+  }
+
+  return { sendMessage, sendVisionMessage, abort }
 }

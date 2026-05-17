@@ -158,13 +158,13 @@ async function handleClear() {
 
 <style scoped>
 /* ══════════════════════════════════════════════════════════
-   ChatView — 高级布局
-   CSS Grid · 玻璃头部 · 氛围光效
+   ChatView — 清爽高级布局
+   CSS Grid · 磨砂头部 · 暖白光晕 · 流畅分割线
    ══════════════════════════════════════════════════════════ */
 
 .layout {
   display: grid;
-  grid-template-columns: clamp(240px, 22vw, 280px) 1fr;
+  grid-template-columns: clamp(260px, 22vw, 300px) 1fr;
   width: 100%;
   height: 100dvh;
   overflow: hidden;
@@ -176,6 +176,15 @@ async function handleClear() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+}
+
+.sidebar-desktop::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(232,138,26,0.015) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 .chat-main {
@@ -185,28 +194,34 @@ async function handleClear() {
   min-height: 0;
   background: var(--bg-primary);
   position: relative;
+  isolation: isolate;
+}
+
+.chat-main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle 140px at 20% 30%, rgba(232,138,26,0.03) 0%, transparent 100%),
+    radial-gradient(circle 100px at 75% 60%, rgba(91,95,199,0.02) 0%, transparent 100%),
+    radial-gradient(circle 120px at 50% 85%, rgba(232,138,26,0.025) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+  animation: floatOrb2 15s ease-in-out infinite;
 }
 
 .chat-header {
   display: flex;
   align-items: center;
-  gap: clamp(8px, 1.5vw, 14px);
-  padding: clamp(10px, 2vw, 14px) clamp(14px, 3vw, 24px);
+  gap: 14px;
+  padding: 12px 24px;
   border-block-end: 1px solid var(--border);
-  background: var(--bg-glass);
-  backdrop-filter: blur(16px) saturate(120%);
-  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  background: var(--bg-glass-heavy);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   flex-shrink: 0;
   position: relative;
   z-index: 2;
-}
-
-.chat-header::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%);
-  pointer-events: none;
 }
 
 .menu-btn {
@@ -217,13 +232,13 @@ async function handleClear() {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .header-title {
-  font-size: clamp(14px, 2vw, 17px);
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -232,15 +247,27 @@ async function handleClear() {
 }
 
 .header-sub {
-  font-size: clamp(11px, 1.4vw, 13px);
-  color: var(--text-secondary);
+  font-size: 12px;
+  color: var(--text-muted);
   font-weight: 400;
 }
 
-/* ── 响应式：平板 ────────────────────────────────────── */
+.chat-header :deep(.el-button:hover) {
+  background: var(--bg-elevated) !important;
+}
+
+.chat-header :deep(.el-button .el-icon) {
+  color: var(--text-muted);
+  transition: color var(--duration-fast);
+}
+
+.chat-header :deep(.el-button:hover .el-icon) {
+  color: var(--accent);
+}
+
 @media (width < 900px) {
   .layout {
-    grid-template-columns: clamp(200px, 25vw, 240px) 1fr;
+    grid-template-columns: clamp(220px, 28vw, 260px) 1fr;
   }
 }
 

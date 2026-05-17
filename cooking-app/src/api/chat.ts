@@ -261,3 +261,30 @@ export async function updateProfile(updates: Partial<UserProfile>): Promise<User
   console.info(`[API] ✅ 用户画像已更新`)
   return data
 }
+
+// ─── 图片识别 ──────────────────────────────────────────────
+
+export interface VisionResponse {
+  success: boolean
+  content: string
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
+export async function sendVisionChat(
+  imageBase64: string,
+  message?: string,
+): Promise<VisionResponse> {
+  console.info('[API] POST /vision/chat')
+
+  const { data } = await request.post<VisionResponse>('/vision/chat', {
+    image: imageBase64,
+    message: message || undefined,
+  })
+
+  console.info(`[API] ✅ 图片识别完成，${data.content.length} 字符`)
+  return data
+}

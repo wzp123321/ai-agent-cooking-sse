@@ -164,71 +164,104 @@ function handleQuickQuestion(q: string) {
 
 <style scoped>
 /* ══════════════════════════════════════════════════════════
-   SidebarPanel — 现代响应式样式
-   策略：clamp() 流体间距 + 逻辑属性 + 滚动优化
+   SidebarPanel — 奢华侧边栏
+   渐变品牌区 · 流光分割线 · 悬浮卡片 · 精致状态灯
    ══════════════════════════════════════════════════════════ */
 
 .sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: clamp(14px, 2.5vw, 22px) clamp(12px, 2vw, 18px);
-  gap: clamp(12px, 2vw, 18px);
+  padding: clamp(16px, 2.5vw, 24px) clamp(14px, 2vw, 20px);
+  gap: clamp(14px, 2vw, 20px);
   overflow: hidden;
 }
 
-/* ── Logo ──────────────────────────────────────────────── */
-.sidebar-header { text-align: center; }
+/* ── 品牌区 ───────────────────────────────────────────── */
+.sidebar-header {
+  text-align: center;
+  padding-block-end: clamp(12px, 2vw, 18px);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.sidebar-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
+}
 
 .logo {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(6px, 1.2vw, 12px);
+  gap: 10px;
 }
 
 .logo-icon {
-  font-size: clamp(24px, 4vw, 34px);
-  filter: drop-shadow(0 2px 4px rgba(255, 107, 53, 0.3));
+  font-size: 32px;
+  filter: drop-shadow(0 2px 8px rgba(232,138,26,0.25));
+  transition: transform var(--duration-fast) var(--ease-out-back);
+}
+
+.logo-icon:hover {
+  transform: scale(1.1) rotate(-5deg);
 }
 
 .logo-text {
-  font-size: clamp(17px, 2.5vw, 22px);
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent-light));
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: var(--accent-gradient-soft);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .logo-sub {
-  color: var(--text-secondary);
-  font-size: clamp(11px, 1.4vw, 13px);
-  margin-block-start: clamp(2px, 0.5vw, 6px);
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-block-start: 6px;
+  font-weight: 400;
 }
 
 /* ── 新建按钮 ─────────────────────────────────────────── */
-.new-chat-btn {
+:deep(.new-chat-btn) {
   width: 100%;
-  border-radius: clamp(8px, 1.5vw, 12px);
-  font-weight: 500;
+  height: 44px;
+  border-radius: var(--radius-md) !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  letter-spacing: 0.01em;
+  background: var(--accent-gradient-soft) !important;
+  border: none !important;
+  box-shadow: 0 2px 12px rgba(232,138,26,0.18) !important;
   transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+    transform var(--duration-fast) var(--ease-out-back),
+    box-shadow var(--duration-normal) var(--ease-out-expo) !important;
 }
 
-.new-chat-btn:active {
+:deep(.new-chat-btn:hover) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(232,138,26,0.28) !important;
+}
+
+:deep(.new-chat-btn:active) {
   transform: scale(0.97);
 }
 
 /* ── 区块标题 ─────────────────────────────────────────── */
 .section-title {
-  font-size: clamp(10px, 1.3vw, 12px);
+  font-size: 11px;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-block-end: clamp(6px, 1vw, 10px);
-  font-weight: 500;
+  letter-spacing: 0.08em;
+  margin-block-end: 10px;
+  font-weight: 600;
 }
 
 /* ── 会话列表 ─────────────────────────────────────────── */
@@ -239,30 +272,44 @@ function handleQuickQuestion(q: string) {
 .session-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: clamp(120px, 20vh, 180px);
+  gap: 3px;
+  max-height: clamp(140px, 22vh, 200px);
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .session-item {
   display: flex;
   align-items: center;
-  gap: clamp(6px, 1vw, 10px);
-  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 12px);
+  gap: 10px;
+  padding: 9px 12px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    transform 0.15s ease;
-  font-size: clamp(12px, 1.5vw, 14px);
+    background var(--duration-fast) var(--ease-out-expo),
+    color var(--duration-fast) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-back);
+  font-size: 13px;
   color: var(--text-secondary);
+  position: relative;
+}
+
+.session-item::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid transparent;
+  transition: border-color var(--duration-fast) var(--ease-out-expo);
+  pointer-events: none;
 }
 
 .session-item:hover {
-  background: var(--bg-hover);
+  background: var(--bg-elevated);
   color: var(--text-primary);
+}
+
+.session-item:hover::before {
+  border-color: var(--border-light);
 }
 
 .session-item:active {
@@ -270,12 +317,27 @@ function handleQuickQuestion(q: string) {
 }
 
 .session-item.active {
-  background: var(--bg-hover);
-  color: var(--accent);
-  font-weight: 500;
+  background: var(--accent-soft);
+  color: var(--accent-light);
+  font-weight: 600;
 }
 
-.session-icon { flex-shrink: 0; }
+.session-item.active::before {
+  border-color: var(--border-accent);
+}
+
+.session-item.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+
+.session-icon { flex-shrink: 0; font-size: 14px; }
 
 .session-title {
   flex: 1;
@@ -287,10 +349,14 @@ function handleQuickQuestion(q: string) {
 .session-del {
   opacity: 0;
   flex-shrink: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--duration-fast) var(--ease-out-expo);
 }
 
 .session-item:hover .session-del { opacity: 1; }
+
+:deep(.session-item .session-del:hover) {
+  color: var(--danger) !important;
+}
 
 /* ── 快捷问题 ─────────────────────────────────────────── */
 .quick-section {
@@ -304,32 +370,45 @@ function handleQuickQuestion(q: string) {
 .quick-list {
   display: flex;
   flex-direction: column;
-  gap: clamp(4px, 0.8vw, 8px);
+  gap: 6px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .quick-btn {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: clamp(6px, 1vw, 10px) clamp(8px, 1.5vw, 12px);
-  font-size: clamp(11px, 1.4vw, 13px);
+  padding: 10px 14px;
+  font-size: 12px;
   color: var(--text-secondary);
   cursor: pointer;
   text-align: start;
   transition:
-    background 0.15s ease,
-    color 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.15s ease;
-  line-height: 1.45;
+    background var(--duration-fast) var(--ease-out-expo),
+    color var(--duration-fast) var(--ease-out-expo),
+    border-color var(--duration-fast) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-back),
+    box-shadow var(--duration-fast) var(--ease-out-expo);
+  line-height: 1.5;
+  position: relative;
+  overflow: hidden;
+}
+
+.quick-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-gradient-soft);
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out-expo);
 }
 
 .quick-btn:hover {
-  background: var(--bg-hover);
+  background: var(--bg-elevated);
   color: var(--text-primary);
-  border-color: var(--accent);
+  border-color: var(--border-accent);
+  box-shadow: var(--shadow-sm);
+  transform: translateX(2px);
 }
 
 .quick-btn:active {
@@ -341,32 +420,45 @@ function handleQuickQuestion(q: string) {
   margin-block-start: auto;
   display: flex;
   align-items: center;
-  gap: clamp(6px, 1vw, 10px);
-  font-size: clamp(11px, 1.4vw, 13px);
-  color: var(--text-secondary);
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
   flex-shrink: 0;
-  padding-block-start: clamp(8px, 1.5vw, 12px);
+  padding-block-start: 14px;
   border-block-start: 1px solid var(--border);
+  position: relative;
+}
+
+.sidebar-footer::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 20%;
+  right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-accent), transparent);
 }
 
 .status-dot {
-  width: clamp(7px, 1vw, 9px);
-  height: clamp(7px, 1vw, 9px);
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--text-muted);
-  transition:
-    background 0.3s ease,
-    box-shadow 0.3s ease;
   flex-shrink: 0;
+  position: relative;
 }
 
 .status-dot.online {
-  background: #4caf50;
-  box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(16,185,129,0.5);
+  animation: pulseGlow 3s ease-in-out infinite;
 }
 
 .status-dot.offline {
-  background: #f44336;
-  box-shadow: 0 0 8px rgba(244, 67, 54, 0.3);
+  background: var(--danger);
+  box-shadow: 0 0 6px rgba(239,68,68,0.25);
+}
+
+.status-text {
+  font-weight: 500;
 }
 </style>

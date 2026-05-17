@@ -10,8 +10,12 @@
  *   GET  /health              - 健康检查（前端轮询判断 Agent 是否在线）
  *   POST /api/chat            - 普通对话（完整返回）
  *   POST /api/chat/stream     - 流式对话（SSE）
+ *   POST /api/vision/chat     - 图片识别对话
+ *   GET  /api/sessions        - 会话列表
  *   GET  /api/history/:id     - 获取对话历史
  *   DELETE /api/session/:id   - 清除指定会话
+ *   GET  /api/profile         - 获取用户画像
+ *   PUT  /api/profile         - 更新用户画像
  *
  * 技术选型：
  *   - Express：轻量 HTTP 框架，路由清晰，middleware 机制完善
@@ -29,6 +33,7 @@ import 'dotenv/config'
 import { CookingAgent } from './agent'
 import { runMigrations } from './db/migrate'
 import { userProfileRepo } from './db/user-profile.repository'
+import { analyzeImage } from './vision'
 import type { ChatRequestBody } from './types'
 
 // ─── Express 应用初始化 ────────────────────────────────────
@@ -48,8 +53,8 @@ app.use(cors())
 console.info('[Middleware] ✅ CORS 已启用')
 
 // JSON 请求体解析：限制 100KB 防止大请求攻击
-app.use(express.json({ limit: '100kb' }))
-console.info('[Middleware] ✅ JSON 解析中间件已启用（限制 100KB）')
+app.use(express.json({ limit: '20mb' }))
+console.info('[Middleware] ✅ JSON 解析中间件已启用（限制 20MB）')
 
 // 请求日志中间件
 app.use((req: Request, _res: Response, next: express.NextFunction) => {
@@ -285,6 +290,56 @@ app.post(
 )
 
 /**
+ * POST /api/vision/chat
+ * ────────────────────────────────────────────────────────────
+ * 图片识别对话接口。
+ *
+ * 用途：
+ *   - 用户上传食材/菜品图片，AI 识别并给出做菜建议
+ *   - 需要配置 VISION_API_KEY（或 OPENAI_API_KEY）才能使用
+ *
+ * 请求 Body：
+ *   {
+ *     "image": "base64编码的图片数据",
+ *     "message": "可选的文字描述",
+ *     "sessionId": "会话ID（可选）"
+ *   }
+ *
+ * 返回示例：
+ *   {
+ *     "success": true,
+ *     "content": "我看到了番茄、鸡蛋和青椒…你可以做…",
+ *     "usage": { "prompt_tokens": 500, "completion_tokens": 200, "total_tokens": 700 }
+ *   }
+ */
+app.post(
+  '/api/vision/chat',
+  async (req: Request, res: Response) => {
+    const { image, message } = req.body
+
+    if (!image || typeof image !== 'string') {
+      res.status(400).json({ error: '请提供有效的 image 字段（base64 编码）' })
+      return
+    }
+
+    console.info(`[Route] POST /api/vision/chat 收到图片请求`)
+
+    const result = await analyzeImage({
+      imageBase64: image,
+      message: message?.trim() || undefined,
+    })
+
+    if (!result.success) {
+      res.status(500).json({ error: result.error })
+      return
+    }
+
+    console.info(`[Route] ✅ /api/vision/chat 返回成功，${result.content.length} 字符`)
+    res.json(result)
+  },
+)
+
+/**
  * GET /api/sessions
  * ────────────────────────────────────────────────────────────
  * 获取所有会话列表（用于前端侧边栏展示历史对话）。
@@ -406,6 +461,7 @@ app.listen(PORT, () => {
   console.log(`   GET    /health               健康检查`)
   console.log(`   POST   /api/chat             普通对话`)
   console.log(`   POST   /api/chat/stream      流式对话（SSE）`)
+  console.log(`   POST   /api/vision/chat      图片识别对话`)
   console.log(`   GET    /api/sessions         会话列表`)
   console.log(`   GET    /api/history/:id      获取对话历史`)
   console.log(`   DELETE /api/session/:id      清除会话`)

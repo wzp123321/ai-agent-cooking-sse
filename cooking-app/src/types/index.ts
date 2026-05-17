@@ -6,7 +6,8 @@ export interface ChatMessage {
   role: MessageRole
   content: string
   timestamp: number
-  streaming?: boolean // 是否正在流式输出
+  streaming?: boolean
+  image?: string
 }
 
 // ─── 会话类型 ─────────────────────────────────────────

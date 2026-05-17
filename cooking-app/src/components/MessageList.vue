@@ -1,5 +1,5 @@
 <template>
-  <div class="messages-container" ref="containerRef">
+  <div class="messages-container" ref="containerRef" @scroll="onScroll">
 
     <WelcomeScreen :visible="chatStore.messages.length === 0" />
 
@@ -22,7 +22,7 @@ import WelcomeScreen from '@/components/WelcomeScreen.vue'
 
 const chatStore = useChatStore()
 
-const { containerRef } = useScrollToBottom(() =>
+const { containerRef, onScroll } = useScrollToBottom(() =>
   chatStore.messages.map((m) => m.content).join(''),
 )
 </script>
