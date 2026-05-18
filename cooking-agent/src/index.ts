@@ -264,27 +264,81 @@ app.post(
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
     }
 
+    /**
+     * 中止信号控制器 — 串联前后端的中断链路
+     *
+     * 场景：
+     *   ① 用户在前端点击"停止生成" → AbortController.abort() → signal 置位
+     *   ② 客户端 TCP 连接意外断开 → req.on('close') → abort()
+     *
+     * 信号沿以下路径传播：
+     *   index.ts → agent.chatStream(signal) → llm.chatCompletionStream(signal)
+     *   → for await (const chunk of stream) { if (signal.aborted) break }
+     */
+    const abortController = new AbortController()
+
+    /**
+     * finished — 正常完成标记
+     *   在 onDone 回调中置为 true，防止 close 事件误触发中止
+     *
+     * hasStreamed — 已开始流式传输标记
+     *   防止 Vite 代理在 SSE 连接建立初期的瞬时 close 事件误触发中止
+     *   只有在至少一个 chunk 已发送给客户端后，close 才被视为"用户主动断开"
+     *
+     * writableEnded — Express 响应结束标记
+     *   res.end() 后底层 socket 可能延迟关闭，此时 close 事件不应再处理
+     */
+    let finished = false
+    let hasStreamed = false
+
+    req.on('close', () => {
+      if (!finished && !res.writableEnded && hasStreamed) {
+        console.info(`[Route] 🔌 SSE [${sessionId}] 客户端断开连接（已流式 ${hasStreamed ? '是' : '否'}），触发中止`)
+        abortController.abort()
+      } else if (!hasStreamed) {
+        console.info(`[Route] 🔌 SSE [${sessionId}] 连接建立阶段 close 事件，忽略（hasStreamed=false）`)
+      } else if (finished) {
+        console.info(`[Route] 🔌 SSE [${sessionId}] 正常完成后的 close 事件，忽略`)
+      }
+    })
+
+    /**
+     * try 块内调用 agent.chatStream()，正常的完成/中止均由内部回调处理：
+     *   - onChunk → sendEvent('chunk') → 前端逐 token 显示
+     *   - onDone  → sendEvent('done')  → 前端停止打字机效果
+     *
+     * catch 块捕获两种异常：
+     *   ① Agent 内部未处理的异常（如 JSON 解析失败、持久化错误）
+     *   ② LLM API 调用异常（网络超时、限流等）
+     *   均通过 SSE error 事件告知前端，前端展示友好错误提示
+     */
     try {
-      // ── 启动流式对话 ──
       await agent.chatStream(
         message.trim(),
         sessionId,
-        // onChunk：每个 token 片段到达时触发，实时推送给客户端
         (chunk) => {
-          sendEvent('chunk', { content: chunk })
+          hasStreamed = true
+          if (!res.writableEnded) {
+            sendEvent('chunk', { content: chunk })
+          }
         },
-        // onDone：整个流结束后触发，告知客户端传输完成
         (full) => {
-          sendEvent('done', { content: full, sessionId })
-          console.info(`[Route] ✅ SSE [${sessionId}] 传输完成`)
-          res.end()
+          finished = true
+          if (!res.writableEnded) {
+            sendEvent('done', { content: full, sessionId })
+            console.info(`[Route] ✅ SSE [${sessionId}] 传输完成`)
+            res.end()
+          }
         },
+        abortController.signal,
       )
     } catch (err) {
-      // 出错时发送 error 事件，然后正常结束响应
+      finished = true
       console.error(`[Route] ❌ SSE [${sessionId}] 出错：${(err as Error).message}`)
-      sendEvent('error', { error: (err as Error).message })
-      res.end()
+      if (!res.writableEnded) {
+        sendEvent('error', { error: (err as Error).message })
+        res.end()
+      }
     }
   },
 )

@@ -22,9 +22,18 @@ import WelcomeScreen from '@/components/WelcomeScreen.vue'
 
 const chatStore = useChatStore()
 
-const { containerRef, onScroll } = useScrollToBottom(() =>
-  chatStore.messages.map((m) => m.content).join(''),
-)
+/**
+ * 自动滚底触发器 — 避免全量 content 拼接
+ *
+ * 之前：messages.map(m => m.content).join('')  在每个 chunk 都拼接 ~500KB+
+ * 现在：只跟踪  ① 消息数量变化（新消息 → 滚底）
+ *              ② 最后一条消息的 content 长度变化（流式更新 → 滚底）
+ * 二者合并为一个短字符串，O(1) 比较
+ */
+const { containerRef, onScroll } = useScrollToBottom(() => {
+  const msgs = chatStore.messages
+  return `n${msgs.length}_l${msgs[msgs.length - 1]?.content?.length ?? 0}`
+})
 </script>
 
 <style scoped>

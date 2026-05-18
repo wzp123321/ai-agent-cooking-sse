@@ -546,11 +546,21 @@ if (isFirstUserMessage) {
 ### 8.2 实现代码
 
 ```typescript
+/**
+ * chatStream — 流式对话（SSE 推送）
+ *
+ * @param userMessage — 用户输入文本
+ * @param sessionId   — 会话 ID
+ * @param onChunk     — 逐 token 回调（前端实现打字机效果）
+ * @param onDone      — 完成回调（前端停止 streaming 状态）
+ * @param signal      — AbortSignal，用于用户手动中止或连接断开时中断 LLM 生成
+ */
 async chatStream(
   userMessage: string,
   sessionId: string,
   onChunk: (delta: string) => void,
   onDone: (fullContent: string) => void,
+  signal?: AbortSignal,  // ← 中止信号
 ): Promise<void> {
   const messages = this.loadMessages(sessionId)
   messages.push({ role: 'user', content: userMessage })
@@ -600,13 +610,38 @@ async chatStream(
 }
 ```
 
-### 8.3 关键注意事项
+### 8.3 中止信号集成
 
-- **工具调用阶段不流式**：ReAct 循环中的工具调用使用非流式模式
+从 index.ts 的 SSE 端点通过 `signal?: AbortSignal` 参数传入，沿以下路径传播：
+
+```
+index.ts AbortController
+  → agent.chatStream(signal)
+    → llm.chatCompletionStream(signal)
+      → for await 循环中检查 signal.aborted
+```
+
+**检测时机：**
+
+| 位置 | 检测代码 | 日志 |
+|------|----------|------|
+| ReAct 每轮循环前 | `if (signal?.aborted) { cancelled = true; break }` | `[Agent] 🛑 检测到中止信号，ReAct 第 N 轮前退出` |
+| LLM 流式输出每个 chunk | `if (signal?.aborted) break` | LLM SDK 内部处理 |
+| 流式完成后 | `if (signal?.aborted) { cancelled = true }` | `[Agent] 🛑 流式输出中被中止，已生成 N 字符` |
+
+**中止后处理：**
+- 有部分内容 → 追加 `[已中止]` 标记，持久化部分结果
+- 无任何内容 → 返回提示语 "请求已被中断，请重试。"
+- 两种情况均调用 `onDone()`，确保前端状态正常清理
+
+### 8.4 关键注意事项
+
+- **工具调用阶段不流式**：ReAct 循环中的工具调用使用非流式模式，避免中间 thinking 被推送给用户
 - **最终回答才流式**：只有 LLM 决定直接回答时才开启 `stream: true`
-- **流式完成后持久化**：`onDone` 回调中将完整内容写入数据库
-- **`for await` 遍历流**：使用 `for await (const chunk of stream)` 消费 SSE 流
+- **流式完成后持久化**：`onDone` 回调中将完整内容写入磁盘
+- **`for await` 遍历流**：使用 `for await (const chunk of stream)` 消费 OpenAI 的 SSE 流
 - **delta 可能为空**：某些 chunk 不含 content（如含 usage 信息），需要判空
+- **中止信号守卫**：SSE 端点的 `req.on('close')` 极易误触发，通过 `finished` / `hasStreamed` / `writableEnded` 三标记精确判断，参见 [streaming-guide.md](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/views/streaming-guide.md) §6.4
 
 ---
 

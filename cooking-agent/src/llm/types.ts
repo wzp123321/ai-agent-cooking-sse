@@ -61,6 +61,7 @@ export interface LLMProvider {
     onChunk: (chunk: string) => void,
     onDone: (result: ChatCompletionResult) => void,
     onError: (err: Error) => void,
+    signal?: AbortSignal,
   ): Promise<void>
 }
 

@@ -51,6 +51,7 @@ export class DeepSeekProvider implements LLMProvider {
     onChunk: (chunk: string) => void,
     onDone: (result: ChatCompletionResult) => void,
     onError: (err: Error) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     try {
       const stream = await this.client.chat.completions.create({
@@ -65,8 +66,15 @@ export class DeepSeekProvider implements LLMProvider {
 
       let fullContent = ''
       let toolCalls: ChatCompletionResult['tool_calls'] = null
+      let cancelled = false
 
       for await (const chunk of stream) {
+        if (signal?.aborted) {
+          cancelled = true
+          console.info('[LLM:DeepSeek] 🛑 流已被中止')
+          break
+        }
+
         const delta = chunk.choices[0]?.delta
 
         if (delta?.content) {
@@ -97,11 +105,19 @@ export class DeepSeekProvider implements LLMProvider {
         }
       }
 
+      if (cancelled) {
+        console.info(`[LLM:DeepSeek] 🛑 流已中止，已生成 ${fullContent.length} 字符`)
+      }
+
       onDone({
         content: fullContent || null,
         tool_calls: toolCalls,
       })
     } catch (err) {
+      if ((err as any)?.name === 'AbortError' || signal?.aborted) {
+        console.info('[LLM:DeepSeek] 🛑 请求被中止')
+        return
+      }
       onError(err instanceof Error ? err : new Error(String(err)))
     }
   }

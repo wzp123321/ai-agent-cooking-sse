@@ -35,6 +35,17 @@ import type { ChatCompletionResult } from './llm/types'
 
 const MAX_REACT_STEPS = 5
 const MAX_RETRIES = 3
+
+/**
+ * LLM 上下文窗口上限（消息条数）
+ *
+ * DeepSeek 上下文 ~128K tokens。单条消息平均 ~800 tokens（含系统提示），
+ * 40 条约 32K tokens，在窗口内留足工具调用和回答的余量。
+ *
+ * 超出此数量时，只保留 system + 最近 40 条消息，
+ * 在 system 后插入一条摘要消息说明上下文已被截断。
+ */
+const MAX_CONTEXT_MESSAGES = 40
 const RETRY_BASE_DELAY_MS = 500
 
 function sleep(ms: number): Promise<void> {
@@ -90,6 +101,28 @@ export class CookingAgent {
     }))
 
     console.info(`[Session] 📂 加载会话 ${sessionId}：${messages.length} 条消息`)
+
+    /**
+     * 滑动窗口截断 — 防止 LLM 上下文溢出
+     *
+     * 策略：保留 system + 最近 MAX_CONTEXT_MESSAGES 条
+     * 被截断的消息用一条摘要消息替代，包含截断的轮次数
+     */
+    if (messages.length > MAX_CONTEXT_MESSAGES + 1) {
+      const systemMsg = messages[0] // 保留 system 消息
+      const numTruncated = messages.length - MAX_CONTEXT_MESSAGES - 1
+      const recent = messages.slice(-MAX_CONTEXT_MESSAGES)
+
+      const truncationNote: Message = {
+        role: 'system',
+        content: `[注意] 对话历史过长，已省略最早的 ${numTruncated} 条消息以保持在上下文窗口内。当前保留最近 ${MAX_CONTEXT_MESSAGES} 条消息。`,
+      }
+
+      const truncated = [systemMsg, truncationNote, ...recent]
+      console.info(`[Session] ✂️  上下文截断：${messages.length} → ${truncated.length}（省略 ${numTruncated} 条）`)
+      return truncated
+    }
+
     return messages
   }
 
@@ -305,21 +338,58 @@ export class CookingAgent {
 
   // ─── 流式对话 ────────────────────────────────────────────
 
+  /**
+   * chatStream — 流式对话（SSE 推送）
+   *
+   * 这是 Agent 最核心的对外接口，完成 ReAct 推理循环 + 流式回答生成。
+   *
+   * @param userMessage   — 用户输入文本
+   * @param sessionId     — 会话 ID，用于加载/持久化消息历史
+   * @param onChunk       — 逐 token 回调，每个 delta 触发一次（前端实现打字机效果）
+   * @param onDone        — 完成回调，包含完整回答文本（前端停止 streaming 状态）
+   * @param signal        — 中止信号，由 index.ts 的 AbortController 传入。
+   *                        检测时机：① ReAct 每轮循环开始前 ② LLM 流式输出的每个 chunk 之间
+   *
+   * 流程概览：
+   *   1. 加载历史消息 → 追加用户消息
+   *   2. 进入 ReAct 循环（最多 MAX_REACT_STEPS 轮）
+   *      a. 每轮开始前检查 signal.aborted
+   *      b. 调用 LLM（带 3 次重试）
+   *      c. 如有 tool_calls → 执行工具 → 追加结果到 messages → 下一轮
+   *      d. 如无 tool_calls → 进入流式回答阶段 → break
+   *   3. 流式回答阶段
+   *      a. 调用 llm.chatCompletionStream({ stream: true })
+   *      b. 每个 chunk 检查 signal.aborted
+   *      c. 通过 onChunk 回调推送增量文本
+   *   4. 后处理
+   *      a. 中止 → 保存部分结果 + onDone
+   *      b. 空回答 → 发送兜底文案
+   *      c. 正常 → 持久化完整消息 + onDone
+   */
   async chatStream(
     userMessage: string,
     sessionId: string = 'default',
     onChunk: (delta: string) => void,
     onDone: (fullContent: string) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const messages = this.loadMessages(sessionId)
     this.prependUserMessage(messages, sessionId, userMessage)
 
     let fullContent = ''
     let totalToolCalls = 0
+    let cancelled = false
     const reactLog: ReActStep[] = []
 
     try {
       for (let step = 1; step <= MAX_REACT_STEPS; step++) {
+        // 每轮推理前检查中止信号
+        if (signal?.aborted) {
+          cancelled = true
+          console.info(`[Agent] 🛑 检测到中止信号，ReAct 第 ${step} 轮前退出`)
+          break
+        }
+
         console.info(`[Agent] 🧠 ReAct 推理第 ${step} 步...`)
 
         const response = await this.callLLMWithRetry(messages)
@@ -332,7 +402,7 @@ export class CookingAgent {
             messages, sessionId, assistantContent, assistantToolCalls, reactLog, step,
           )
         } else {
-          console.info(`[Agent] 🔄 进入流式回答阶段`)
+          console.info(`[Agent] 🔄 第 ${step} 轮 LLM 返回最终回答，进入流式输出阶段`)
 
           await this.llm.chatCompletionStream(
             {
@@ -350,28 +420,65 @@ export class CookingAgent {
             (err) => {
               console.error(`[Agent] ❌ 流式回答出错：${err.message}`)
             },
+            signal,
           )
 
-          const answerMsg: Message = { role: 'assistant', content: fullContent }
-          messages.push(answerMsg)
-          this.persistMessage(sessionId, answerMsg)
+          if (signal?.aborted) {
+            cancelled = true
+            console.info(`[Agent] 🛑 流式输出中被中止，已生成 ${fullContent.length} 字符`)
+          }
 
-          this.logReActSummary(reactLog, totalToolCalls)
-
-          console.info(`[Agent] ✅ 流式回答完成（${fullContent.length} 字符）`)
-          onDone(fullContent)
-          return
+          break
         }
       }
 
-      const fallback = '抱歉，这个问题比较复杂，我已经尽力思考了。请您换个更具体的问题。'
-      const fallbackMsg: Message = { role: 'assistant', content: fallback }
-      messages.push(fallbackMsg)
-      this.persistMessage(sessionId, fallbackMsg)
-      onDone(fallback)
+      // ── 处理中止场景 ─────────────────────────────────────
+      // ① 有部分内容 → 追加 [已中止] 标记
+      // ② 无任何内容 → 发送友好提示语，避免前端收到空回答
+      // 两种情况下均持久化消息，确保刷新后仍可见
+      if (cancelled) {
+        console.info(`[Agent] 🛑 流式对话已中止 [${sessionId}]，已生成 ${fullContent.length} 字符`)
+
+        if (fullContent.length > 0) {
+          fullContent += '\n\n[已中止]'
+        } else {
+          fullContent = '请求已被中断，请重试。'
+        }
+
+        const partialMsg: Message = { role: 'assistant', content: fullContent }
+        messages.push(partialMsg)
+        this.persistMessage(sessionId, partialMsg)
+
+        onDone(fullContent)
+        return
+      }
+
+      // ── 处理空回答场景 ───────────────────────────────────
+      // 触发条件：LLM 未生成任何文本（极少见，通常由 API 异常导致）
+      // 处理方式：返回兜底文案，避免前端显示空消息
+      if (fullContent.length === 0) {
+        console.warn(`[Agent] ⚠️ 流式回答无内容 [${sessionId}]，使用兜底文案`)
+        const fallback = '抱歉，这个问题比较复杂，我已经尽力思考了。请您换个更具体的问题。'
+        const fallbackMsg: Message = { role: 'assistant', content: fallback }
+        messages.push(fallbackMsg)
+        this.persistMessage(sessionId, fallbackMsg)
+        onDone(fallback)
+        return
+      }
+
+      // ── 正常完成 ──────────────────────────────────────────
+      const answerMsg: Message = { role: 'assistant', content: fullContent }
+      messages.push(answerMsg)
+      this.persistMessage(sessionId, answerMsg)
+
+      this.logReActSummary(reactLog, totalToolCalls)
+
+      console.info(`[Agent] ✅ 流式对话已完成 [${sessionId}]（${fullContent.length} 字符，${totalToolCalls} 次工具调用）`)
+      onDone(fullContent)
 
     } catch (error) {
       console.error(`[Agent] ❌ 流式调用失败 [${sessionId}]：${(error as Error).message}`)
+      console.error(`[Agent] 📋 失败时已生成 ${fullContent.length} 字符，${totalToolCalls} 次工具调用`)
       throw error
     }
   }

@@ -314,8 +314,13 @@ watch(
 | 优先级 | 问题 | 状态 | 修复方案 |
 |--------|------|------|----------|
 | 🔴 P0 | **AbortError 未重置 loading** | ✅ 已修复 | [useConversation.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/hooks/useConversation.ts#L94-L99) — onError 回调和外层 catch 两处 AbortError 分支增加 `store.loading = false` / `aiMsg.streaming = false` / `abortController = null` |
+| 🔴 P0 | **req.on('close') 误触发中断** | ✅ 已修复 | [index.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-agent/src/index.ts#L285-L296) — 增加 `finished` 标记区分正常完成与异常断开，避免正常结束时被当作中断 |
+| 🔴 P0 | **回答为空、对话中断** | ✅ 已修复 | [agent.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-agent/src/agent.ts#L400-L410) — 增加 `hasStreamed` 标记，仅在已开始流式传输后才响应 close 事件；中止时空内容返回提示语 |
+| 🟡 P1 | **后端卡死前端无限 loading** | ✅ 已修复 | [useConversation.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/hooks/useConversation.ts#L126-L138) — 增加 60 秒超时计时器，超时后自动中止请求并显示超时提示 |
+| 🟡 P1 | **SSE 连接中断无友好提示** | ✅ 已修复 | [chat.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/api/chat.ts#L122-L130) — try-catch 包裹 while(true) 读取循环，捕获 TCP RST 异常并调用 onError |
 | 🟡 P1 | **Markdown 重复解析全量文本** | ✅ 已修复 | [MessageBubble.vue](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/components/MessageBubble.vue#L21-L63) — `computed → ref + watch`，流式过程中 60ms 节流批量解析 |
 | 🟢 P2 | **滚动不跟随手动暂停** | ✅ 已修复 | [useScrollToBottom.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/hooks/useScrollToBottom.ts) — 离底部 ≥ 80px 时暂停自动滚底，3 秒冷却期后恢复 |
+| 🎨 UI | **头像/思考过程/按钮过于简陋** | ✅ 已修复 | [MessageBubble.vue](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/components/MessageBubble.vue) — 见 §6.4 UI 重构详情 |
 | 🟡 P1 | **ReAct 阶段无反馈** | 📋 待实现 | 见 §7.1 |
 | 🟡 P1 | **SSE 断连无自动重连** | 📋 待实现 | 见 §7.2 |
 | 🟡 P1 | **客户端心跳超时** | 📋 待实现 | 见 §7.3 |
@@ -380,6 +385,104 @@ function onScroll() {
 ```
 
 **修复文件**：[useScrollToBottom.ts](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/hooks/useScrollToBottom.ts) + [MessageList.vue](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/components/MessageList.vue)
+
+### 6.4 中止机制全链路
+
+**架构**：用户手动中止或超时 → 前端 AbortController.abort() → fetch 抛出 AbortError → 后端 signal.aborted 置位 → 逐层传播。
+
+```
+前端点击"停止生成"
+  → useConversation.stopGeneration()
+    → abortController.abort()
+      → fetch() 抛出 AbortError → onError 回调 → 清理 loading
+      → 后端 req.on('close') → abortController.abort()
+        → signal.aborted = true
+          → agent.chatStream() 每轮 ReAct 前检查 signal?.aborted → break
+          → llm.chatCompletionStream() 每个 chunk 检查 signal?.aborted → break
+            → agent 保存部分结果 → onDone('[已中止]')
+```
+
+**关键设计：三标记守卫**
+
+后端 SSE 端点的 `req.on('close')` 极易误触发（Vite 代理的瞬时 close、正常完成的 socket 回收等）。通过三个标记精确判断：
+
+| 标记 | 作用 | 设置时机 |
+|------|------|----------|
+| `finished` | 正常完成标记，防止完成后的 close 误触发 | `onDone` 回调中置 `true` |
+| `hasStreamed` | 是否已开始流式传输，防止连接建立初期的 close 误触发 | 第一个 `chunk` 通过 `onChunk` 回调时置 `true` |
+| `writableEnded` | Express 响应是否已结束 | `res.end()` 后自动置 `true` |
+
+触发条件：`!finished && !res.writableEnded && hasStreamed` — 三者同时满足才认定为"用户主动断开"。
+
+### 6.5 流式请求超时保护
+
+**问题**：后端 Agent 卡死或 LLM API 无响应时，前端 `fetch()` 会无限等待。
+
+**方案**：在 `useConversation.sendMessage()` 中设置 60 秒 `setTimeout` 定时器：
+
+```typescript
+streamTimer = setTimeout(() => {
+  if (!abortController) return
+  console.warn('[Conversation] ⏰ 流式请求超时')
+  abortController.abort()           // 中止 fetch
+  abortController = null
+  store.loading = false
+  if (aiMsg.streaming) {
+    aiMsg.streaming = false
+    if (!aiMsg.content) {
+      aiMsg.content = '回答超时，请稍后重试。'   // 无内容 → 完整提示
+    } else {
+      aiMsg.content += '\n\n[回答超时]'         // 有部分内容 → 追加标记
+    }
+  }
+}, STREAM_TIMEOUT_MS)
+```
+
+**定时器清理时机**（所有出口都需清理，防止内存泄漏）：
+- `onDone` 回调中 → 正常完成
+- `onError` 回调中 → 错误
+- `stopGeneration()` → 用户手动中止
+- 外层 `catch` → 异常
+
+### 6.6 SSE 连接中断捕获
+
+**问题**：当 Express 进程崩溃（kill/kill -9），已建立的 TCP 连接被操作系统强制 RST。前端的 `reader.read()` 抛出 `TypeError` 而非正常的 `done: true`。
+
+**方案**：用 `try-catch` 包裹整个 `while(true)` 读取循环：
+
+```typescript
+try {
+  while (true) {
+    const { done, value } = await reader.read()
+    // ... SSE 解析 ...
+  }
+} catch (err) {
+  console.error('[API] ❌ SSE 连接中断（Agent 可能已崩溃）：', err)
+  onError(new Error('Agent 连接中断，请检查后端服务是否正常运行'))
+}
+```
+
+### 6.7 UI 视觉重构
+
+**头像设计**：从 emoji 字符替换为 SVG 矢量图标
+- 用户：圆形人物剪影，琥珀渐变背景 (#f0a030 → #e88a1a)
+- 助手：星形剪影（厨师帽隐喻），暖灰白渐变 + 蓝紫图标色
+- 助手生成中：外围叠加 `avatarPulse` 呼吸光晕（2s 循环）
+
+**思考中指示器**：替代空白的闪烁气泡
+- 显示 "思考中" 文字标签
+- 三颗圆点弹跳动画（`dotBounce`，每颗错开 0.2s delay）
+- 气泡边框在 `thinking` 状态下变为琥珀色
+
+**停止按钮**：从 Element Plus `type="danger"` 大红按钮改为深色胶囊钮
+- 深暖棕渐变 (#3d3530 → #2a2420)，融入暖白主题
+- SVG 方块图标 + "停止生成" 文字
+- 阴影呼吸动画（`stopPulse`，2.6s 循环）
+- hover → 背景变亮、上浮 1px
+
+**相关文件**：
+- [MessageBubble.vue](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/components/MessageBubble.vue)
+- [InputBar.vue](file:///e:/workspace/private/ai-agent-cooking/cooking-app/src/components/InputBar.vue)
 
 ---
 

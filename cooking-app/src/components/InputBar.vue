@@ -56,11 +56,33 @@
           📷
         </button>
 
+        <!--
+          停止生成按钮 — AI 回答生成过程中显示，替代原有 el-button type="danger" 的大红按钮
+            设计要点：
+              - 深色渐变背景 (#3d3530 → #2a2420)，融入暖白主题，不刺眼
+              - 胶囊圆角 (radius-full)，与输入框风格统一
+              - SVG 方块图标 + "停止生成" 文字
+              - stopPulse 呼吸阴影动画（2.6s 循环），吸引注意但不制造焦虑
+              - hover → 背景变亮变白、上浮 1px
+         -->
+        <button
+          v-if="chatStore.loading"
+          class="stop-btn"
+          @click="handleStop"
+          title="停止生成"
+        >
+          <svg class="stop-icon" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="10" height="10" rx="2" />
+          </svg>
+          <span class="stop-text">停止生成</span>
+        </button>
+
         <el-button
+          v-else
           type="primary"
           :icon="Promotion"
           :disabled="!canSend"
-          :loading="chatStore.loading"
+          :loading="false"
           class="send-btn"
           @click="handleSend"
         />
@@ -82,7 +104,7 @@ import { useConversation } from "@/hooks"
 import { AGENT_OFFLINE_TIP, AGENT_ONLINE_PLACEHOLDER, DISCLAIMER } from "@/constants"
 
 const chatStore = useChatStore()
-const { sendMessage, sendVisionMessage } = useConversation()
+const { sendMessage, sendVisionMessage, stopGeneration } = useConversation()
 
 const inputText = ref("");
 const inputRef = ref();
@@ -151,6 +173,10 @@ function handleKeydown(e: KeyboardEvent) {
     e.preventDefault();
     handleSend();
   }
+}
+
+function handleStop() {
+  stopGeneration()
 }
 
 async function handleSend() {
@@ -341,6 +367,61 @@ async function handleSend() {
   box-shadow: 0 2px 12px rgba(232,138,26,0.22);
   transition: transform var(--duration-fast) var(--ease-out-back),
               box-shadow var(--duration-fast) var(--ease-out-expo);
+}
+
+.stop-btn {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 0 15px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(80, 70, 60, 0.15);
+  background: linear-gradient(145deg, #3d3530, #2a2420);
+  color: #e8ddd0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 14px rgba(30, 20, 15, 0.2);
+  transition: all var(--duration-fast) var(--ease-out-expo);
+  flex-shrink: 0;
+  animation: stopPulse 2.6s ease-in-out infinite;
+}
+
+.stop-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.8;
+  transition: opacity var(--duration-fast);
+}
+
+.stop-text {
+  line-height: 1;
+}
+
+.stop-btn:hover {
+  background: linear-gradient(145deg, #4a3f39, #352e29);
+  box-shadow: 0 6px 24px rgba(30, 20, 15, 0.32);
+  transform: translateY(-1px);
+  color: #fff;
+  border-color: rgba(120, 100, 85, 0.25);
+}
+
+.stop-btn:hover .stop-icon {
+  opacity: 1;
+}
+
+.stop-btn:active {
+  transform: scale(0.96);
+  box-shadow: 0 1px 6px rgba(30, 20, 15, 0.15);
+  transition: all 0.1s var(--ease-out-expo);
+}
+
+@keyframes stopPulse {
+  0%, 100% { box-shadow: 0 2px 14px rgba(30, 20, 15, 0.2); }
+  50%      { box-shadow: 0 2px 22px rgba(30, 20, 15, 0.35); }
 }
 
 .send-btn:not(:disabled):hover {

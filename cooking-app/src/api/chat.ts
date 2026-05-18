@@ -87,10 +87,23 @@ export async function sendChatStream(
       signal,
     })
   } catch (err) {
+    /**
+     * AbortError 不是真正的网络错误，而是用户主动中止或超时的预期行为。
+     * 必须调用 onError 回调，确保上层的 sendMessage 能够正确清理
+     * loading 状态、streaming 标记和 AbortController 引用。
+     */
     if ((err as Error).name === 'AbortError') {
       console.info(`[API] 🛑 SSE [${sessionId}] 请求已取消`)
+      onError(err as Error)
       return
     }
+    /**
+     * 真正的网络异常：
+     *   - Agent 进程崩溃（ECONNREFUSED）
+     *   - DNS 解析失败
+     *   - 网络超时
+     *   - TLS 握手失败
+     */
     console.error('[API] ❌ /chat/stream 网络请求失败：', err)
     onError(err as Error)
     return
@@ -108,43 +121,68 @@ export async function sendChatStream(
   const decoder = new TextDecoder()
   let buffer = ''
 
-  while (true) {
-    const { done, value } = await reader.read()
+  /**
+   * try-catch 包裹整个 read 循环，处理 Agent 进程崩溃导致的 TCP RST：
+   *
+   * 当 Express 进程被 kill 时，已建立的 TCP 连接被操作系统强制 RST，
+   * reader.read() 会抛出 TypeError 或 AbortError。如果不捕获，
+   * 异常会冒泡到 sendMessage 的外层 catch，用户看到的是原始错误信息
+   * 而非友好的 "Agent 连接中断" 提示。
+   */
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
 
-    if (done) {
-      console.info('[API] ✅ SSE 流读取完毕')
-      break
-    }
+      if (done) {
+        console.info('[API] ✅ SSE 流读取完毕')
+        break
+      }
 
-    buffer += decoder.decode(value, { stream: true })
+      /**
+       * TextDecoder.decode(value, { stream: true }) 的关键参数 stream: true：
+       * 多字节字符（如中文 UTF-8 编码的 3 字节字符）可能跨 chunk 边界被截断，
+       * stream: true 让 TextDecoder 缓存不完整的多字节序列，等待下一个 chunk 拼接。
+       * 省略此参数会导致乱码。
+       */
+      buffer += decoder.decode(value, { stream: true })
 
-    const lines = buffer.split('\n')
-    buffer = lines.pop() ?? ''
+      /**
+       * buffer 机制防止 SSE 行被 chunk 边界截断：
+       *   - split('\n') 分割后，最后一行可能不完整
+       *   - lines.pop() 保留最后一行到 buffer，等待下一个 chunk 拼接
+       *   - 只有完整的行（以 \n 结尾）才进入解析循环
+       */
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
 
-    for (const line of lines) {
-      if (!line.trim()) continue
+      for (const line of lines) {
+        if (!line.trim()) continue
 
-      if (line.startsWith('data: ')) {
-        const jsonStr = line.slice(6).trim()
-        if (!jsonStr) continue
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr) continue
 
-        try {
-          const data = JSON.parse(jsonStr) as Record<string, unknown>
+          try {
+            const data = JSON.parse(jsonStr) as Record<string, unknown>
 
-          if (typeof data['content'] === 'string' && !('sessionId' in data)) {
-            onChunk(data['content'] as string)
-          } else if (typeof data['sessionId'] === 'string') {
-            console.info(`[API] ✅ SSE done [${data['sessionId']}] 传输完成`)
-            onDone(data['content'] as string)
-          } else if (typeof data['error'] === 'string') {
-            console.error('[API] ❌ SSE error 事件：', data['error'])
-            onError(new Error(data['error'] as string))
+            if (typeof data['content'] === 'string' && !('sessionId' in data)) {
+              onChunk(data['content'] as string)
+            } else if (typeof data['sessionId'] === 'string') {
+              console.info(`[API] ✅ SSE done [${data['sessionId']}] 传输完成`)
+              onDone(data['content'] as string)
+            } else if (typeof data['error'] === 'string') {
+              console.error('[API] ❌ SSE error 事件：', data['error'])
+              onError(new Error(data['error'] as string))
+            }
+          } catch {
+            console.warn('[API] ⚠️  SSE 行解析失败，跳过：', jsonStr.slice(0, 50))
           }
-        } catch {
-          console.warn('[API] ⚠️  SSE 行解析失败，跳过：', jsonStr.slice(0, 50))
         }
       }
     }
+  } catch (err) {
+    console.error('[API] ❌ SSE 连接中断（Agent 可能已崩溃）：', err)
+    onError(new Error('Agent 连接中断，请检查后端服务是否正常运行'))
   }
 }
 
