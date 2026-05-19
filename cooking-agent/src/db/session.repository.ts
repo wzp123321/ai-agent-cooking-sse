@@ -1,4 +1,4 @@
-import { getDb } from './index'
+import { getPool } from './index'
 
 export interface SessionRow {
   id: string
@@ -8,45 +8,53 @@ export interface SessionRow {
 }
 
 export class SessionRepository {
-  create(id: string, title: string, now: number): SessionRow {
-    const db = getDb()
-    db.prepare(
-      `INSERT INTO sessions (id, title, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`,
-    ).run(id, title, now, now)
+  async create(id: string, title: string, now: number): Promise<SessionRow> {
+    const pool = await getPool()
+    await pool.execute(
+      `INSERT INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+      [id, title, now, now],
+    )
     return { id, title, created_at: now, updated_at: now }
   }
 
-  findById(id: string): SessionRow | undefined {
-    const db = getDb()
-    return db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as
-      | SessionRow
-      | undefined
+  async findById(id: string): Promise<SessionRow | undefined> {
+    const pool = await getPool()
+    const [rows] = await pool.execute(
+      'SELECT * FROM sessions WHERE id = ?',
+      [id],
+    )
+    const list = rows as SessionRow[]
+    return list[0]
   }
 
-  findAll(): SessionRow[] {
-    const db = getDb()
-    return db
-      .prepare('SELECT * FROM sessions ORDER BY updated_at DESC')
-      .all() as SessionRow[]
+  async findAll(): Promise<SessionRow[]> {
+    const pool = await getPool()
+    const [rows] = await pool.execute(
+      'SELECT * FROM sessions ORDER BY updated_at DESC',
+    )
+    return rows as SessionRow[]
   }
 
-  updateTitle(id: string, title: string, now: number): void {
-    const db = getDb()
-    db.prepare(
+  async updateTitle(id: string, title: string, now: number): Promise<void> {
+    const pool = await getPool()
+    await pool.execute(
       `UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?`,
-    ).run(title, now, id)
+      [title, now, id],
+    )
   }
 
-  touch(id: string, now: number): void {
-    const db = getDb()
-    db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, id)
+  async touch(id: string, now: number): Promise<void> {
+    const pool = await getPool()
+    await pool.execute(
+      'UPDATE sessions SET updated_at = ? WHERE id = ?',
+      [now, id],
+    )
   }
 
-  deleteById(id: string): boolean {
-    const db = getDb()
-    const result = db.prepare('DELETE FROM sessions WHERE id = ?').run(id)
-    return result.changes > 0
+  async deleteById(id: string): Promise<boolean> {
+    const pool = await getPool()
+    const [result] = await pool.execute('DELETE FROM sessions WHERE id = ?', [id])
+    return (result as any).affectedRows > 0
   }
 }
 

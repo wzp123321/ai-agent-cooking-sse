@@ -1,30 +1,47 @@
-import Database from 'better-sqlite3'
-import path from 'node:path'
+import mysql from 'mysql2/promise'
 
-const DB_PATH = path.resolve(__dirname, '..', '..', 'data', 'cooking.db')
-
-let db: Database.Database | null = null
-
-export function getDb(): Database.Database {
-  if (!db) {
-    const fs = require('node:fs')
-    const dir = path.dirname(DB_PATH)
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-
-    db = new Database(DB_PATH)
-    db.pragma('journal_mode = WAL')
-    db.pragma('foreign_keys = ON')
-    console.info(`[DB] 📂 数据库已连接：${DB_PATH}`)
-  }
-  return db
+const MYSQL_CONFIG = {
+  host: 'localhost',
+  port: 3306,
+  user: 'root',
+  password: '123456',
+  database: 'cooking',
 }
 
-export function closeDb(): void {
-  if (db) {
-    db.close()
-    db = null
+let pool: mysql.Pool | null = null
+
+async function ensureDatabase(): Promise<void> {
+  const conn = await mysql.createConnection({
+    host: MYSQL_CONFIG.host,
+    port: MYSQL_CONFIG.port,
+    user: MYSQL_CONFIG.user,
+    password: MYSQL_CONFIG.password,
+  })
+  await conn.execute(
+    `CREATE DATABASE IF NOT EXISTS \`${MYSQL_CONFIG.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  )
+  await conn.end()
+}
+
+export async function getPool(): Promise<mysql.Pool> {
+  if (!pool) {
+    await ensureDatabase()
+    pool = mysql.createPool({
+      ...MYSQL_CONFIG,
+      waitForConnections: true,
+      connectionLimit: 10,
+    })
+    console.info(
+      `[DB] 📂 MySQL 数据库已连接：${MYSQL_CONFIG.host}:${MYSQL_CONFIG.port}/${MYSQL_CONFIG.database}`,
+    )
+  }
+  return pool
+}
+
+export async function closePool(): Promise<void> {
+  if (pool) {
+    await pool.end()
+    pool = null
     console.info('[DB] 🔒 数据库已关闭')
   }
 }

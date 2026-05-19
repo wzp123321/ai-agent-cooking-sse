@@ -71,28 +71,28 @@ export class CookingAgent {
 
     console.info(`[CookingAgent] 🤖 模型：${this.llm.model} (${this.llm.name})`)
     console.info(`[CookingAgent] 🛠️  已注册工具：${TOOL_LIST.map((t) => t.name).join('、')}`)
-    console.info('[CookingAgent] 💾 持久化：SQLite (data/cooking.db)')
+    console.info('[CookingAgent] 💾 持久化：MySQL (localhost:3306/cooking)')
     console.log('[CookingAgent] ✅ CookingAgent 构造完成')
   }
 
   // ─── 会话管理 ────────────────────────────────────────────
 
-  private loadMessages(sessionId: string): Message[] {
+  private async loadMessages(sessionId: string): Promise<Message[]> {
     const now = Date.now()
 
-    if (!sessionRepo.findById(sessionId)) {
+    if (!(await sessionRepo.findById(sessionId))) {
       console.info(`[Session] 🆕 新建会话 ${sessionId}`)
-      sessionRepo.create(sessionId, '新对话', now)
+      await sessionRepo.create(sessionId, '新对话', now)
 
-      const profilePrompt = userProfileRepo.buildProfilePrompt()
+      const profilePrompt = await userProfileRepo.buildProfilePrompt()
       const systemContent = buildSystemMessage() + profilePrompt
 
       const systemMsg: Message = { role: 'system', content: systemContent }
-      messageRepo.insert(sessionId, systemMsg, now)
+      await messageRepo.insert(sessionId, systemMsg, now)
       return [systemMsg]
     }
 
-    const rows = messageRepo.findBySessionId(sessionId)
+    const rows = await messageRepo.findBySessionId(sessionId)
     const messages: Message[] = rows.map((r) => ({
       role: r.role as Message['role'],
       content: r.content,
@@ -126,21 +126,21 @@ export class CookingAgent {
     return messages
   }
 
-  private persistMessage(sessionId: string, msg: Message): void {
-    messageRepo.insert(sessionId, msg, Date.now())
+  private async persistMessage(sessionId: string, msg: Message): Promise<void> {
+    await messageRepo.insert(sessionId, msg, Date.now())
   }
 
-  listSessions() {
+  async listSessions() {
     return sessionRepo.findAll()
   }
 
-  clearSession(sessionId: string): void {
-    messageRepo.deleteBySessionId(sessionId)
-    const deleted = sessionRepo.deleteById(sessionId)
+  async clearSession(sessionId: string): Promise<void> {
+    await messageRepo.deleteBySessionId(sessionId)
+    const deleted = await sessionRepo.deleteById(sessionId)
     console.info(`[Session] 🗑️ 清除会话 ${sessionId}：${deleted ? '成功' : '不存在'}`)
   }
 
-  getHistory(sessionId: string): Message[] {
+  async getHistory(sessionId: string): Promise<Message[]> {
     return messageRepo.findHistoryBySessionId(sessionId)
   }
 
@@ -173,20 +173,20 @@ export class CookingAgent {
 
   // ─── 用户消息预处理 ──────────────────────────────────────
 
-  private prependUserMessage(messages: Message[], sessionId: string, userMessage: string): void {
+  private async prependUserMessage(messages: Message[], sessionId: string, userMessage: string): Promise<void> {
     const now = Date.now()
     console.info(`[Agent] 📥 用户消息 [${sessionId}]：${userMessage.slice(0, 60)}${userMessage.length > 60 ? '…' : ''}`)
 
     const userMsg: Message = { role: 'user', content: userMessage }
     messages.push(userMsg)
-    this.persistMessage(sessionId, userMsg)
+    await this.persistMessage(sessionId, userMsg)
 
-    const isFirstUserMessage = messageRepo.countBySessionId(sessionId) === 1
+    const isFirstUserMessage = (await messageRepo.countBySessionId(sessionId)) === 1
     if (isFirstUserMessage) {
       const title = userMessage.slice(0, 20) + (userMessage.length > 20 ? '…' : '')
-      sessionRepo.updateTitle(sessionId, title, now)
+      await sessionRepo.updateTitle(sessionId, title, now)
     } else {
-      sessionRepo.touch(sessionId, now)
+      await sessionRepo.touch(sessionId, now)
     }
   }
 
@@ -217,7 +217,7 @@ export class CookingAgent {
       })),
     }
     messages.push(toolMsg)
-    this.persistMessage(sessionId, toolMsg)
+    await this.persistMessage(sessionId, toolMsg)
 
     reactLog.push({
       step,
@@ -247,7 +247,7 @@ export class CookingAgent {
         content: obsContent,
       }
       messages.push(obsMsg)
-      this.persistMessage(sessionId, obsMsg)
+      await this.persistMessage(sessionId, obsMsg)
 
       if (reactLog.length > 0) {
         const last = reactLog[reactLog.length - 1]
@@ -274,8 +274,8 @@ export class CookingAgent {
   // ─── 普通对话 ────────────────────────────────────────────
 
   async chat(userMessage: string, sessionId: string = 'default'): Promise<ChatResult> {
-    const messages = this.loadMessages(sessionId)
-    this.prependUserMessage(messages, sessionId, userMessage)
+    const messages = await this.loadMessages(sessionId)
+    await this.prependUserMessage(messages, sessionId, userMessage)
 
     const reactLog: ReActStep[] = []
     let totalToolCalls = 0
@@ -299,7 +299,7 @@ export class CookingAgent {
 
           const answerMsg: Message = { role: 'assistant', content: finalContent }
           messages.push(answerMsg)
-          this.persistMessage(sessionId, answerMsg)
+          await this.persistMessage(sessionId, answerMsg)
 
           this.logReActSummary(reactLog, totalToolCalls)
 
@@ -328,7 +328,7 @@ export class CookingAgent {
         }
       }
 
-      return this.fallbackAnswer(messages, sessionId)
+      return await this.fallbackAnswer(messages, sessionId)
 
     } catch (error) {
       console.error(`[Agent] ❌ 调用失败 [${sessionId}]：${(error as Error).message}`)
@@ -373,8 +373,8 @@ export class CookingAgent {
     onDone: (fullContent: string) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const messages = this.loadMessages(sessionId)
-    this.prependUserMessage(messages, sessionId, userMessage)
+    const messages = await this.loadMessages(sessionId)
+    await this.prependUserMessage(messages, sessionId, userMessage)
 
     let fullContent = ''
     let totalToolCalls = 0
@@ -447,7 +447,7 @@ export class CookingAgent {
 
         const partialMsg: Message = { role: 'assistant', content: fullContent }
         messages.push(partialMsg)
-        this.persistMessage(sessionId, partialMsg)
+        await this.persistMessage(sessionId, partialMsg)
 
         onDone(fullContent)
         return
@@ -461,7 +461,7 @@ export class CookingAgent {
         const fallback = '抱歉，这个问题比较复杂，我已经尽力思考了。请您换个更具体的问题。'
         const fallbackMsg: Message = { role: 'assistant', content: fallback }
         messages.push(fallbackMsg)
-        this.persistMessage(sessionId, fallbackMsg)
+        await this.persistMessage(sessionId, fallbackMsg)
         onDone(fallback)
         return
       }
@@ -469,10 +469,9 @@ export class CookingAgent {
       // ── 正常完成 ──────────────────────────────────────────
       const answerMsg: Message = { role: 'assistant', content: fullContent }
       messages.push(answerMsg)
-      this.persistMessage(sessionId, answerMsg)
+      await this.persistMessage(sessionId, answerMsg)
 
       this.logReActSummary(reactLog, totalToolCalls)
-
       console.info(`[Agent] ✅ 流式对话已完成 [${sessionId}]（${fullContent.length} 字符，${totalToolCalls} 次工具调用）`)
       onDone(fullContent)
 
@@ -485,12 +484,12 @@ export class CookingAgent {
 
   // ─── 兜底回答 ────────────────────────────────────────────
 
-  private fallbackAnswer(messages: Message[], sessionId: string): ChatResult {
+  private async fallbackAnswer(messages: Message[], sessionId: string): Promise<ChatResult> {
     console.warn(`[Agent] ⚠️ 达到最大推理步数 ${MAX_REACT_STEPS}，强制结束`)
     const fallback = '抱歉，这个问题比较复杂，我已经尽力思考了。请您换个更具体的问题，或者我可以为您查询具体的菜谱、营养数据或食品安全信息。'
     const fallbackMsg: Message = { role: 'assistant', content: fallback }
     messages.push(fallbackMsg)
-    this.persistMessage(sessionId, fallbackMsg)
+    await this.persistMessage(sessionId, fallbackMsg)
     return { success: true, message: fallback, sessionId }
   }
 }

@@ -1,4 +1,4 @@
-import { getDb } from './index'
+import { getPool } from './index'
 import type { Message } from '../types'
 
 export interface MessageRow {
@@ -12,15 +12,16 @@ export interface MessageRow {
 }
 
 export class MessageRepository {
-  insert(sessionId: string, msg: Message, now: number): MessageRow {
-    const db = getDb()
+  async insert(sessionId: string, msg: Message, now: number): Promise<MessageRow> {
+    const pool = await getPool()
     const toolCallsJson = msg.tool_calls ? JSON.stringify(msg.tool_calls) : null
-    const result = db.prepare(
+    const [result] = await pool.execute(
       `INSERT INTO messages (session_id, role, content, tool_call_id, tool_calls, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
-    ).run(sessionId, msg.role, msg.content, msg.tool_call_id ?? null, toolCallsJson, now)
+      [sessionId, msg.role, msg.content, msg.tool_call_id ?? null, toolCallsJson, now],
+    )
     return {
-      id: result.lastInsertRowid as number,
+      id: (result as any).insertId as number,
       session_id: sessionId,
       role: msg.role,
       content: msg.content,
@@ -30,17 +31,17 @@ export class MessageRepository {
     }
   }
 
-  findBySessionId(sessionId: string): MessageRow[] {
-    const db = getDb()
-    return db
-      .prepare(
-        'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC',
-      )
-      .all(sessionId) as MessageRow[]
+  async findBySessionId(sessionId: string): Promise<MessageRow[]> {
+    const pool = await getPool()
+    const [rows] = await pool.execute(
+      'SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC',
+      [sessionId],
+    )
+    return rows as MessageRow[]
   }
 
-  findHistoryBySessionId(sessionId: string): Message[] {
-    const rows = this.findBySessionId(sessionId)
+  async findHistoryBySessionId(sessionId: string): Promise<Message[]> {
+    const rows = await this.findBySessionId(sessionId)
     return rows
       .filter((r) => r.role !== 'system')
       .map((r) => ({
@@ -51,20 +52,23 @@ export class MessageRepository {
       }))
   }
 
-  deleteBySessionId(sessionId: string): number {
-    const db = getDb()
-    const result = db
-      .prepare('DELETE FROM messages WHERE session_id = ?')
-      .run(sessionId)
-    return result.changes
+  async deleteBySessionId(sessionId: string): Promise<number> {
+    const pool = await getPool()
+    const [result] = await pool.execute(
+      'DELETE FROM messages WHERE session_id = ?',
+      [sessionId],
+    )
+    return (result as any).affectedRows
   }
 
-  countBySessionId(sessionId: string): number {
-    const db = getDb()
-    const row = db
-      .prepare('SELECT COUNT(*) as cnt FROM messages WHERE session_id = ? AND role != ?')
-      .get(sessionId, 'system') as { cnt: number }
-    return row.cnt
+  async countBySessionId(sessionId: string): Promise<number> {
+    const pool = await getPool()
+    const [rows] = await pool.execute(
+      'SELECT COUNT(*) as cnt FROM messages WHERE session_id = ? AND role != ?',
+      [sessionId, 'system'],
+    )
+    const list = rows as Array<{ cnt: number }>
+    return list[0].cnt
   }
 }
 

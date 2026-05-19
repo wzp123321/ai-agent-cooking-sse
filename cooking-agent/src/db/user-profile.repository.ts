@@ -1,4 +1,4 @@
-import { getDb } from './index'
+import { getPool } from './index'
 
 export interface UserProfile {
   id: string
@@ -36,30 +36,39 @@ function rowToProfile(row: ProfileRow): UserProfile {
 }
 
 export const userProfileRepo = {
-  getOrCreate(id: string = 'default'): UserProfile {
-    const db = getDb()
+  async getOrCreate(id: string = 'default'): Promise<UserProfile> {
+    const pool = await getPool()
     const now = Date.now()
 
-    let row = db.prepare('SELECT * FROM user_profiles WHERE id = ?').get(id) as ProfileRow | undefined
+    const [rows] = await pool.execute(
+      'SELECT * FROM user_profiles WHERE id = ?',
+      [id],
+    )
+    let row = (rows as ProfileRow[])[0]
 
     if (!row) {
-      db.prepare(
+      await pool.execute(
         'INSERT INTO user_profiles (id, allergies, diet_type, skill_level, disliked, calorie_goal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ).run(id, '[]', '', 'intermediate', '[]', 0, now, now)
+        [id, '[]', '', 'intermediate', '[]', 0, now, now],
+      )
 
-      row = db.prepare('SELECT * FROM user_profiles WHERE id = ?').get(id) as ProfileRow
+      const [newRows] = await pool.execute(
+        'SELECT * FROM user_profiles WHERE id = ?',
+        [id],
+      )
+      row = (newRows as ProfileRow[])[0]
     }
 
     return rowToProfile(row!)
   },
 
-  update(
+  async update(
     id: string,
     updates: Partial<Pick<UserProfile, 'allergies' | 'diet_type' | 'skill_level' | 'disliked' | 'calorie_goal'>>,
-  ): UserProfile {
-    const db = getDb()
+  ): Promise<UserProfile> {
+    const pool = await getPool()
     const now = Date.now()
-    const current = this.getOrCreate(id)
+    const current = await this.getOrCreate(id)
 
     const allergies = updates.allergies ?? current.allergies
     const diet_type = updates.diet_type ?? current.diet_type
@@ -67,25 +76,26 @@ export const userProfileRepo = {
     const disliked = updates.disliked ?? current.disliked
     const calorie_goal = updates.calorie_goal ?? current.calorie_goal
 
-    db.prepare(
+    await pool.execute(
       `UPDATE user_profiles
        SET allergies = ?, diet_type = ?, skill_level = ?, disliked = ?, calorie_goal = ?, updated_at = ?
        WHERE id = ?`,
-    ).run(
-      JSON.stringify(allergies),
-      diet_type,
-      skill_level,
-      JSON.stringify(disliked),
-      calorie_goal,
-      now,
-      id,
+      [
+        JSON.stringify(allergies),
+        diet_type,
+        skill_level,
+        JSON.stringify(disliked),
+        calorie_goal,
+        now,
+        id,
+      ],
     )
 
     return this.getOrCreate(id)
   },
 
-  buildProfilePrompt(id: string = 'default'): string {
-    const profile = this.getOrCreate(id)
+  async buildProfilePrompt(id: string = 'default'): Promise<string> {
+    const profile = await this.getOrCreate(id)
 
     const parts: string[] = []
 
