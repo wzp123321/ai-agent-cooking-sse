@@ -38,7 +38,7 @@ import type { ChatResponse, SessionMeta, ChatMessage, UserProfile } from '@/type
  * @param sessionId - 会话 ID（默认 'default'）
  * @returns 包含 AI 回复的结构化对象
  */
-export async function sendChat(message: string, sessionId: string): Promise<ChatResponse> {
+export const sendChat = async (message: string, sessionId: string): Promise<ChatResponse> => {
   console.info(`[API] POST /chat [${sessionId}]`)
 
   const { data } = await request.post<ChatResponse>('/chat', { message, sessionId })
@@ -67,14 +67,14 @@ export async function sendChat(message: string, sessionId: string): Promise<Chat
  * @param onError   - 出错时的回调
  * @param signal    - AbortSignal，用于取消请求
  */
-export async function sendChatStream(
+export const sendChatStream = async (
   message: string,
   sessionId: string,
   onChunk: (chunk: string) => void,
   onDone: (full: string) => void,
   onError: (err: Error) => void,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<void> => {
   console.info(`[API] POST /chat/stream [${sessionId}] 建立 SSE 连接…`)
 
   let response: Response
@@ -194,7 +194,7 @@ export async function sendChatStream(
  * 调用时机：用户点击"新对话"或"清空当前对话"按钮
  * 注意：即使请求失败也不 throw，前端已同步清除了本地状态
  */
-export async function clearSession(sessionId: string): Promise<void> {
+export const clearSession = async (sessionId: string): Promise<void> => {
   console.info(`[API] DELETE /session/${sessionId}`)
 
   try {
@@ -219,7 +219,7 @@ export async function clearSession(sessionId: string): Promise<void> {
  *
  * @returns true = Agent 在线，false = Agent 离线或网络不可达
  */
-export async function healthCheck(): Promise<boolean> {
+export const healthCheck = async (): Promise<boolean> => {
   try {
     const res = await fetch('/health')
     const online = res.ok
@@ -237,7 +237,7 @@ export async function healthCheck(): Promise<boolean> {
 /**
  * 获取所有会话列表（用于侧边栏展示）
  */
-export async function getSessions(): Promise<SessionMeta[]> {
+export const getSessions = async (): Promise<SessionMeta[]> => {
   console.info('[API] GET /sessions')
 
   const { data } = await request.get<SessionMeta[]>('/sessions')
@@ -251,7 +251,7 @@ export async function getSessions(): Promise<SessionMeta[]> {
  *
  * 返回时过滤掉 system/tool 消息，只保留 user/assistant 对话
  */
-export async function getHistory(sessionId: string): Promise<ChatMessage[]> {
+export const getHistory = async (sessionId: string): Promise<ChatMessage[]> => {
   console.info(`[API] GET /history/${sessionId}`)
 
   const { data } = await request.get<{
@@ -277,7 +277,7 @@ export async function getHistory(sessionId: string): Promise<ChatMessage[]> {
 /**
  * 获取用户画像（偏好设置）
  */
-export async function getProfile(): Promise<UserProfile> {
+export const getProfile = async (): Promise<UserProfile> => {
   console.info('[API] GET /profile')
 
   const { data } = await request.get<UserProfile>('/profile')
@@ -291,7 +291,7 @@ export async function getProfile(): Promise<UserProfile> {
  *
  * @param updates - 部分画像字段（只传需要更新的字段）
  */
-export async function updateProfile(updates: Partial<UserProfile>): Promise<UserProfile> {
+export const updateProfile = async (updates: Partial<UserProfile>): Promise<UserProfile> => {
   console.info('[API] PUT /profile', updates)
 
   const { data } = await request.put<UserProfile>('/profile', updates)
@@ -312,10 +312,10 @@ export interface VisionResponse {
   }
 }
 
-export async function sendVisionChat(
+export const sendVisionChat = async (
   imageBase64: string,
   message?: string,
-): Promise<VisionResponse> {
+): Promise<VisionResponse> => {
   console.info('[API] POST /vision/chat')
 
   const { data } = await request.post<VisionResponse>('/vision/chat', {
